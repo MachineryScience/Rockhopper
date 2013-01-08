@@ -1,0 +1,66 @@
+{% block definitions %}{% end %}
+<!DOCTYPE html>
+<!-- Copyright 2012, 2013 Machinery Science, LLC   -->
+<html>
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+        <link rel="stylesheet" href="static/tabs.css" type="text/css" />
+
+        {% block custom_header %}{% end %}
+
+        <script type="text/javascript" src="static/linuxcncclient.js"></script>
+    </head>
+
+    <body onload="PollLinuxCNC('{{ escape(name) }}')" >
+
+        <div id="top_wrap">
+
+            <img id="logo" src="static/chips.png">
+
+            <div id="section_tabs">
+                <ul>
+                    <!-- CSS Tabs -->
+                    <li {% if name=='config' %}id="current"{% end %} ><a href="LinuxCNCConfig.html"><span>Configure</span></a></li>
+                    <li {% if name=='halsetup' %}id="current"{% end %}><a href="LinuxCNCHALSetup.html"><span>HAL Setup</span></a></li>                
+                    <li {% if name=='halgraph' %}id="current"{% end %}><a href="LinuxCNCHALGraph.html"><span>HAL Graph</span></a></li>
+                    <li {% if name=='system' %}id="current"{% end %}><a href="LinuxCNCSystem.html"><span>System</span></a></li>
+                    <li {% if name=='status' %}id="current"{% end %} ><a href="LinuxCNCStatus.html"><span>Status</span></a></li>
+                    <li {% if name=='commands' %}id="current"{% end %}><a href="LinuxCNCCommands.html"><span>Commands</span></a></li>
+                    <li {% if name=='keepalive' %}id="current"{% end %}><a href="LinuxCNCKeepalive.html"><span>Ping Server</span></a></li>
+                    <li {% if name=='doc' %}id="current"{% end %}><a href="LinuxCNCWebServerDoc.html"><span>Server Doc</span></a></li>
+                    <li {% if name=='sandbox' %}id="current"{% end %}><a href="LinuxCNCSandbox.html"><span>Sandbox</span></a></li>
+                </ul>
+            </div> 
+        </div>
+
+
+
+        <div id="WebSocketData">
+
+            <h1>LinuxCNC {% block label %}{% end %} Page:</h1>
+
+            {% block custom_body %}{% end %}
+
+            <br>
+            {% if not vars().has_key('no_command_reply') %}<div id="Command_Reply"></div>{%end%}
+
+        </div>
+        
+        <div id="AltWebSocketData">
+            <h1>LinuxCNC {% block label %}{% end %} Page:</h1>
+            <br>
+            Server not available.
+        </div>
+
+        <p id="footer">
+            
+            The domain name for the server that loaded this document is 
+            <script>
+                document.write(document.domain);
+            </script>
+        </p>
+
+
+    </body>
+</html>
+

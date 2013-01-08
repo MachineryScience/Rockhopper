@@ -1,0 +1,261 @@
+<!--
+
+/* Copyright 2012, 2013 Machinery Science, LLC */
+
+body {
+    padding:0;  
+    font: Verdana;
+    font-size: medium;
+    margin-right: 5px;
+    margin-left: 5px;
+    margin-bottom: 5px;
+    margin-top: 5px;
+}
+
+.sandbox_data { width: 100%;  }
+
+#top_wrap { 
+ 
+}
+
+#leftcol {
+    position: relative;
+    width: 12%;
+    float:left;
+}
+
+#midcol {
+    position: relative;
+    width: 88%;
+    float:right;    
+}
+
+#logo {
+    float:right;
+    font: 7pt arial,helvetica,sans-serif;
+    /*padding: 0 12pt 24pt 0;*/
+    position: relative;
+
+    margin-right: 0px;
+    margin-left: 0px;
+    margin-bottom: -40px;
+    margin-top: 0px;
+    padding-right: 0px;
+    padding-left: 0px;
+    padding-bottom: 0px;
+    padding-top: 0px;
+    
+    width: 170px;
+    height: 124px;    
+}
+
+
+#halgrapharea img {
+    width: 90%;
+    margin-right: 5%;
+    margin-left: 5%;
+    margin-bottom: 0px;
+    margin-top: 0px;
+    padding-right: 0px;
+    padding-left: 0px;
+    padding-bottom: 0px;
+    padding-top: 0px;    
+}
+
+#top_button_bar {
+    clear:both;
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    padding-top: 5px;
+    border-bottom-width: 1px;
+    border-bottom-style: solid;
+    border-top-width: 1px;
+    border-top-style: solid;    
+}
+
+h1 {
+    clear:both;
+    position:relative;
+    margin-top: 2em;
+    margin-bottom: 1em;
+    padding-top: 1em;
+}
+
+h2 {
+    font: bold 14px Verdana, Arial, Helvetica, sans-serif;
+    color: #000;
+    margin: 0px;
+    margin-bottom: 5px;
+    padding: 0px 0px 0px 0px;
+}
+
+img {
+    border: none;
+}
+
+#LinuxCNCRunStatus {
+    font-weight: bold;
+}
+
+/* Command Reply area */
+#Command_Reply {
+    float: none;
+    font-weight: bold;
+    color: #0000cc;
+    border-right-style: solid;
+    border-left-style: solid;
+    border-bottom-style: solid;
+    border-top-style: solid;
+    border-right-width: 1px;
+    border-left-width: 1px;
+    border-bottom-width: 1px;
+    border-top-width: 1px;
+
+    padding-right: 1px;
+    padding-left: 1px;
+    padding-bottom: 1px;
+    padding-top: 1px;
+
+    clear:both;
+}
+
+#footer{
+    float:none;
+    text-align: left;
+    color: #6B78A9;
+    margin-top: 20px;
+    padding-top: 5px;
+    border-top-style: solid;
+    border-top-width: 100%;
+    border-top:1px solid #6B78A9;
+    clear:both;
+    position:relative;
+}
+
+
+#section_tabs {
+    margin:0;
+    padding:0;        
+    float:left;
+    width:100%;
+    font-size:93%;
+    line-height:normal;
+    border-bottom:1px solid #6B78A9;
+    margin-right: -5px;
+    margin-left: -5px;
+    margin-top: 0;
+    
+    font: bold 11px/1.5em Verdana;
+    clear: both;
+    position: relative;
+}
+
+#section_tabs ul {
+    margin:0;
+    padding:10px 10px 0 50px;
+    list-style:none;
+}
+#section_tabs li {
+    display:inline;
+    margin:0;
+    padding:0;
+}
+#section_tabs a {
+    float:left;
+    background:url("tableft4.gif") no-repeat left top;
+    margin:0;
+    padding:0 0 0 7px;
+    text-decoration:none;
+}
+#section_tabs a span {
+    float:left;
+    display:block;
+    background:url("tabright4.gif") no-repeat right top;
+    padding:5px 15px 4px 6px;
+    color:#6B78A9;
+}
+/* Commented Backslash Hack hides rule from IE5-Mac \*/
+#section_tabs a span {float:none;}
+/* End IE5-Mac hack */
+#section_tabs a:hover span {
+    color:#6B78A9;
+}
+#section_tabs a:hover {
+    background-position:0% -42px;
+}
+#section_tabs a:hover span {
+    background-position:100% -42px;
+}
+
+#section_tabs #current a {
+    background-position:0% -42px;
+}
+#section_tabs #current a span {
+    background-position:100% -42px;
+    color: #0000cc;
+    font-size: 110%;
+}
+
+
+
+
+/*- Menu 3--------------------------- */
+
+#menu_title{
+    clear:both;
+}
+
+#left_menu {
+    clear:both;
+    width: 96%;
+
+    margin-right: 5%;
+    margin-bottom: 10px;
+    border-style: solid solid none solid; 
+    border-color: #BCD2E6; 
+    border-size: 1px; 
+    border-width: 1px; 
+    /* border-style: hidden; */
+    font: bold 11px/1.5em Verdana;
+}
+
+
+#left_menu li a {
+    height: 24px;
+    text-decoration: none;
+}
+
+#left_menu a div {
+    overflow: hidden; 
+    white-space: nowrap;
+    text-overflow: ellipsis; 
+}        
+
+#left_menu li a:link, #left_menu li a:visited {
+    /* color: #8BADCF; */
+    color:#6B78A9;
+    display: block;
+    background:  url(menu3.gif); 
+    padding: 8px 0 0 10px;
+    height: 24px;
+}
+
+#left_menu li a:hover, #left_menu #current_section {
+    /* color: #627EB7; */
+    /* color:#6B78A9; */
+    color: #0000cc;
+    background:  url(menu3.gif) 0 -32px; 
+    padding: 8px 0 0 10px;
+    font-weight: bolder;
+    font-size: 110%;
+}
+
+#left_menu ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}        
+-->
+
+
+

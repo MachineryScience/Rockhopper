@@ -1,0 +1,33 @@
+<!-- Copyright 2012, 2013 Machinery Science, LLC   -->
+{% extends LinuxCNCTemplate.html %}
+
+{% block definitions %}
+    {% set name = 'system' %}
+{%end%}
+
+{% block label %}System{% end %}
+
+{% block custom_header %}
+{% end %}
+
+{% block custom_body %}
+<p> This section allows stopping and starting of the linuxCNC system.
+</p>
+
+        <div id="top_button_bar">
+        <button type="button" id="shutdown_linuxcnc" value="Shutdown_LinucCNC" onclick="SystemShutdown();">Shutdown LinuxCNC</button>
+        <button type="button" id="start_linuxcnc" value="Start_LinuxCNC" onclick="SystemStart();">Start LinuxCNC</button>
+        <button type="button" id="set_ini_filename" value="Set_Ini_Filename" onclick="SystemSetINI();" >Set INI File Name</button>
+        </div>
+
+        <form name="INIForm" > 
+            INI File Name: <input type="text" name="ini_name" size=150><br>
+        </form><br>
+
+<p>Current LinuxCNC Status: <span id="LinuxCNCRunStatus">WebServer not available.</span></p>
+<br>
+
+{% end %}
+
+
+

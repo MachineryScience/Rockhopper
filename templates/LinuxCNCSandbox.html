@@ -1,0 +1,33 @@
+<!-- Copyright 2012, 2013 Machinery Science, LLC   -->
+
+{% extends LinuxCNCTemplate.html %}
+
+{% block definitions %}
+    {% set name = 'sandbox' %}
+    {% set no_command_reply = True %}
+{%end%}
+
+{% block label %}WebSocket Command Sandbox{% end %}
+
+{% block custom_header %}
+{% end %}
+
+{% block custom_body %}
+
+<p>Raw strings can be sent to the server for test and debug purposes.  An example might be:</p>
+<Blockquote><pre>{ "id": "my-id", "command":"get", "name":"actual_position" }</pre></Blockquote>
+<p>to which the server might reply:</p>
+<Blockquote><pre>{"code": "?OK", "data": [-1.3521927603716024, 0.68787753600001889, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "id": "my-id"}</pre></Blockquote>
+<p>See <a href="LinuxCNCWebServerDoc.html">LinuxCNCWebServerDoc.html</a> for more description of commands.</p>
+
+        <div id="top_button_bar">
+        <button type="button" id="sandbox_send_button" value="Send_Sandbox_Text" onclick="SandboxSend();">Send Message To Server</button>
+        </div>
+
+<p>INPUT Text:<br><textarea spellcheck="false" class="sandbox_data" id="sandbox_input" rows="5" cols="200"></textarea></p>
+<p>REPLY Text:<br><textarea spellcheck="false" class="sandbox_data" id="sandbox_output" rows="16" ></textarea></p>
+
+{% end %}
+
+
+

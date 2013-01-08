@@ -1,0 +1,22 @@
+<!-- Copyright 2012, 2013 Machinery Science, LLC   -->
+{% extends LinuxCNCTemplate.html %}
+
+{% block definitions %}
+    {% set name = 'halgraph' %}
+{%end%}
+
+{% block label %}HAL Graph{% end %}
+
+{% block custom_header %}
+{% end %}
+
+{% block custom_body %}
+        <p>This section shows the HAL connectivity graph of the currently running system.  Only modules and pins that are actually connected to a signal are shown.</p>
+        <br>
+        <h3>Currently loaded HAL graph: </h3>
+        <br>
+        
+        <div id="halgrapharea"></div>
+        <button type="button" id="update_HAL_graph_button" value="Send Command" onclick="CNCUpdateHALGraphSubmit();">Update the HAL Graph</button><br>        
+{% end %}
+

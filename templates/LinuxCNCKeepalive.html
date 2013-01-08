@@ -1,0 +1,22 @@
+<!-- Copyright 2012, 2013 Machinery Science, LLC   -->
+{% extends LinuxCNCTemplate.html %}
+
+{% block definitions %}
+    {% set name = 'keepalive' %}
+    
+{%end%}
+
+{% block label %}Ping Server{% end %}
+
+{% block custom_header %}
+{% end %}
+
+{% block custom_body %}
+<p>
+    This will send a "ping" (a.k.a., a "keep-alive") to the linuxcnc system.  The web server exports HAL pins which
+    record the time since the last ping was received.  If desired, the HAL can be configured to
+    use this information to, e.g., trigger an e-stop if the user interface crashes.
+</p>
+    <button type="button" id="ping_server_button" value="Send_Keepalive" onclick="CNCKeepaliveSubmit();">Send Keepalive</button><br>        
+{% end %}
+

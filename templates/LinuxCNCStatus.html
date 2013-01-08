@@ -1,0 +1,50 @@
+<!-- Copyright 2012, 2013 Machinery Science, LLC   -->
+{% extends LinuxCNCTemplate.html %}
+
+{% block definitions %}
+    {% set name = 'status' %}
+    {% set no_command_reply = True %}
+{%end%}
+
+{% block label %}Status{% end %}
+
+{% block custom_header %}
+    
+    <style type="text/css">
+        
+        .stattable {
+            border:1px solid #000000;
+            border-collapse:collapse;
+            width:98%;
+            table-layout: fixed;
+            position:relative;
+            left:1%;
+            right:1%;
+        }
+        .stattable td, th{ border:1px solid #000000; overflow:hidden; text-overflow:ellipsis; }
+        .stattable th{  background:#6B78A9; color:#EFEFFB; font-weight: bolder; font-size: larger; }
+        .stattableeven { background:#f8f8ff; }
+        .stattableodd { background:#FFFFFF;  }
+
+        .stattable tr:hover  
+        {
+             /*font-weight: bold; */
+            /*background:#6B78A9;*/
+            /* color:#EFEFFB; */
+            /*color:white;*/
+        }
+    </style>
+
+{% end %}
+
+{% block custom_body %}
+<p> This section is a dump of ALL the non-HAL related linuxcnc status variables.  This is not 
+    intended to be used as a user interface, as there is too much information to allow 
+    easy reading and interpretation.  Instead, this can be used for debugging a system,
+    and exploring the available non-HAL status information.
+</p>
+    <div id="LinuxCNCStatusTable"></div>
+{% end %}
+
+
+

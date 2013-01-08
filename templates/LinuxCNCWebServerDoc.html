@@ -1,0 +1,508 @@
+<!-- Copyright 2012, 2013 Machinery Science, LLC   -->
+{% extends LinuxCNCTemplate.html %}
+
+{% block definitions %}
+{% set name = 'doc' %}
+{% set no_command_reply = True %}
+{%end%}
+
+{% block label %}Server Documentation{% end %}
+
+{% block custom_header %}
+<style title="internal" type="text/css">
+
+.DocHeading1 { 
+    font-size: xx-large;
+    font-weight: bold;
+    margin-bottom: 1em;
+    margin-top: 1em;
+
+    border-width: 0px;
+    border-top-color: black;
+    border-style: solid;
+    border-top-width: 1px;    
+}
+
+.DocCommandDef {
+    margin-top: 1em;
+    padding-top: 2em;
+    border-width: 0px;
+    border-top-color: black;
+    border-style: solid;
+    border-top-width: 1px;
+}
+
+.DocQuote { 
+    font-family: Courier New,Courier,monospace;
+}
+.DocHeading2 { 
+    font-size: x-large;
+    font-weight: bold;
+    margin-bottom: 1em;
+    margin-top: 1em;
+}
+.DocCommand { 
+    font-weight: bold;
+    font-style: italic;
+    color: blue;
+}
+.DocHeading3 { 
+    font-size: large;
+    font-weight: bold;
+    margin-bottom: 1em;
+    margin-top: 1em;
+
+}
+.DocParam { 
+    font-style: italic;
+}
+</style>
+
+
+{% end %}
+
+{% block custom_body %}
+
+
+
+<div class="DocHeading1">Overview</div>
+The LinuxCNC WebSocket Server is a lightweight web server
+customized to provide information and control of a running LinuxCNC
+machine control system. <br>
+<br>
+The server is based on the Tornado open source web server
+framework.&nbsp; Tornado is written in Python, and the LinuxCNC Web
+Socket Server is also written using the Python programming language. <br>
+<br>
+The interface to the LinuxCNC system uses the Python API for
+LinuxCNC.&nbsp; Documentation for this API is at
+ <a target="_blank"
+   href="http://www.linuxcnc.org/docs/devel/html/config/ini_config.html#_emc_section_a_id_sub_emc_section_a">http://www.linuxcnc.org/docs/devel/html/config/ini_config.html#_emc_section_a_id_sub_emc_section_a</a><br>
+<br>
+The server also uses the halcmd program, a part of LinuxCNC which can
+access and configure the HAL layer of LinuxCNC.<br>
+<br>
+To communicate with the LinuxCNC WebSocket Server, a client application
+opens a WebSocket with the server, and sends text commands.&nbsp;
+All commands result in an immediate reply, such as the result of
+executing the command or some status information. Some commands will
+also send further replies, such as notifying the client when a watched
+status variable has changed.<br>
+<br>
+Using this WebSocket based interface, a remote program can query
+status, send commands, and otherwise control the running LinuxCNC
+machine controller.<br>
+<br>
+All commands and replies are formatted using JSON (JavaScript Object
+Notation).&nbsp; This is a text based, human readable format which
+is widely supported in many programming platforms.<br>
+&nbsp;<br>
+<div class="DocHeading1">Setup</div>
+
+<div class="DocHeading2">Installing</div>
+To install the LinuxCNC WebSocket Server on an existing LinuxCNC
+system, the following packages must be installed:<br>
+<br>
+<ul>
+    <li>Tornado web
+        server.&nbsp; Can be
+        found at http://www.tornadoweb.org/, or from the python-tornado
+        package&nbsp;</li>
+    <li>python-pygraphviz package,
+        which in turn will require the graphviz software</li>
+</ul>
+&nbsp;<br>
+<div class="DocHeading2">Launching</div>
+
+<div class="DocHeading1">Programming</div>
+
+<div class="DocHeading2">Opening a Connection</div>
+From the client, to open a WebSocket connection with the LinuxCNC WebSocket Server in JavaScript, execute:<br>
+<br>
+<span class="DocQuote">ws = new WebSocket("ws://domain.com:8000/websocket/linuxcnc","linuxcnc");</span><br>
+<br>
+The second "linuxcnc" specifies the sub-protocol.&nbsp; The
+sub-protocol must always be "linuxcnc."<br>
+<br>
+<div class="DocHeading2">Command Format:</div>
+Commands are sent with the following JSON format:<br>
+<br>
+<span class="DocQuote">{
+    "id":"<span class="DocParam">&lt;command-id&gt;</span>",
+    "command":"<span class="DocParam">&lt;command-name&gt;</span>",
+    ... }</span><br>
+<br>
+<span class="DocParam">&lt;command-id&gt;</span>
+is a string identifying the command so that,
+when the server replies, the client will to which command the reply
+relates.&nbsp; The server will simply copy the
+<span class="DocParam">&lt;command-id&gt;</span>
+into the "id" field of the reply.<br>
+<span class="DocParam">&lt;command-name&gt;</span>&nbsp;
+is a string, the command
+name.&nbsp; See the list of valid commands below.<br>
+<br>
+Further parameters can also be passed in, as appropriate for the
+particular command being sent.<br>
+&nbsp;<br>
+
+<div class="DocHeading2">Reply Format:</div>
+
+Replies from the server have the following JSON format:<br>
+<br>
+<span class="DocQuote">{ "id":<span class="DocParam">"&lt;command-id&gt;"</span>, "code":"<span class="DocParam">&lt;result-code&gt;</span>", ... }</span><br>
+<br>
+<span class="DocParam">&lt;command-id&gt;</span> is copied directly from the sent
+command.&nbsp; The client is responsible for generating unique
+names for different commands, if needed.<br>
+<br>
+<span class="DocParam">&lt;result-code&gt;</span> is a string, containing "?OK" if the
+command was successful.&nbsp; Other codes will indicate an
+error.&nbsp; All result codes begin with a "?" character, followed
+by a description of the error.<br>
+<br>
+Additional data items are included as appropriate for the command.<br>
+&nbsp;<br>
+
+
+
+
+<div class="DocHeading2">Command List:</div>
+
+
+<div class="DocCommandDef">
+<span class="DocCommand">get</span><br>
+<br>
+Returns the current value of a motion system variable. <br>
+<br>
+<div class="DocHeading3">Parameters:</div>
+<span class="DocParam">name</span>
+: The name of the variable to retrieve<br>
+<span class="DocParam">index</span>:
+If the variable is an array, the index to retrieve.&nbsp;
+All indeces are zero based.&nbsp; The variables "tool_table" and
+"axis" are the only two variables that use the index parameter.<br>
+<br>
+<div class="DocHeading3">Return Values:</div>
+<span class="DocParam">data</span>:
+Contains the value of the variable requested.  
+<div class="DocHeading3">Example:</div>
+<span class="DocQuote"><br>
+    =&gt; { "id": "my-id", "command":"get", "name":"actual_position" }<br>
+</span><span class="DocQuote">
+    {"code": "?OK", "data": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "id": "my-id"}<br>
+    <br>
+</span>
+<span class="DocQuote">=&gt;&nbsp; { "id": "my-id", "command":"get", "name":"tool_table", "index":0 }</span><br>
+<span class="DocQuote">&nbsp;{"code": "?OK", "data": [-1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0], "id": "my-id"}</span><br>
+<br>
+<br>
+</div>
+
+
+
+<div class="DocCommandDef">
+<span class="DocCommand">watch</span><br>
+Returns the current value of a motion system variable.&nbsp; Then,
+if the value of this variable changes at any time, a new message will
+be sent from the server to the client with the updated value.&nbsp;
+The server will continue to watch the variable until the socket is
+closed.<br>
+<br>
+<div class="DocHeading3">Parameters:</div>
+<span class="DocParam">name</span>
+: The name of the variable to retrieve<br>
+<span class="DocParam">index</span>:
+If the variable is an array, the index to retrieve.&nbsp;
+All indeces are zero based.&nbsp; The variables "tool_table" and
+"axis" are the only two variables that use the index parameter.<br>
+<br>
+<div class="DocHeading3">Return Values:</div>
+<span class="DocParam">data</span>:
+Contains the value of the variable requested.  Will send a new message with a new
+value of reply whenever the value changes.<br>
+<div class="DocHeading3">Example:</div>
+The status of "actual_position" is watched, as the system is moving
+along the first axis:<br>
+<span class="DocQuote"><br> =&gt; { "id": "my-id", "command":"watch", "name":"actual_position" }</span><br>
+<span class="DocQuote">{"code": "?OK", "data": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "id": "my-id"}</span><br>
+<span class="DocQuote">{"code": "?OK", "data": [0.13490931592091182, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "id": "my-id"}</span><br>
+<span class="DocQuote">{"code": "?OK", "data": [0.14770703752091241, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "id": "my-id"}</span><br>
+<span class="DocQuote">...</span><br>
+</div>
+
+
+<div class="DocCommandDef">
+<span class="DocCommand">list_get</span><br>
+Returns a list of all possible items that can be requested with the 
+<span class="DocCommand">get</span> command.<br>
+<br>
+<div class="DocHeading3">Parameters:</div>
+None.<br>
+<div class="DocHeading3">Return Values:</div>
+<span class="DocParam">data</span>:
+Contains an array of status items.  Each item contains:
+<ul>
+    <li><span class="DocParam">name</span>: the name of the variable</li>
+    <li><span class="DocParam">valtype</span>: the type of the variable.  Some variables may be returned as a string, even if they are listed here as a different type.</li>
+    <li><span class="DocParam">isarray</span>: if true, then this variable is an array, and <span class="DocCommand">get</span> commands must include an <span class="DocParam">index</span> parameter</li>
+    <li><span class="DocParam">help</span>: a help string for this status, describing what it is.</li>
+</ul>
+<div class="DocHeading3">Example:</div>
+<span class="DocQuote"><br>
+    =&gt; { "id": "my-id", "command":"list_get" }<br>
+</span><span class="DocQuote">
+{"code": "?OK", "data": [{"isarray": false, "valtype": "float", "arraylength": 0, "name": "feedrate", "help": "current feedrate"}, {"isarray": false, "valtype": "int", "arraylength": 0, "name": "lube", "help": "lube on flag"}, {"isarray": false, "valtype": "int", "arraylength": 0, "name": "echo_serial_number", "help": "The serial number of the last completed command sent by a UI to task. All commands carry a serial number. Once the command has been executed, its serial number is reflected in echo_serial_number"}, {"isarray": false, "valtype": "string", "arraylength": 0, "name": "file", "help": "currently executing gcode file"}, ...
+</span><br
+    class="DocQuote">
+<br>
+</div>
+ 
+
+<div class="DocCommandDef">
+<span class="DocCommand">list_put</span>
+<br>
+Returns a list of all possible commands that can be sent to the underlying linuxcnc system using the <span class="DocCommand">put</span> command.
+<br>
+<br>
+<div class="DocHeading3">Parameters:</div>
+None.
+<br>
+<div class="DocHeading3">Return Values:</div>
+<span class="DocParam">data</span>:
+Contains an array of command items.  Each item contains:
+<ul>
+    <li><span class="DocParam">name</span>: the name of the command</li>
+    <li><span class="DocParam">help</span>: a help string for this command, describing what it is.</li>
+    <li><span class="DocParam">paramTypes</span>: an array of parameters for the <span class="DocCommand">put</span> command.  Each array element contains:
+        <ul>
+            <li><span class="DocParam">ordinal</span>: the parameter may be specified by its <span class="DocParam">pname</span> or its <span class="DocParam">ordinal</span> number</li>
+            <li><span class="DocParam">pname</span>: the parameter may be specified by its <span class="DocParam">pname</span> or its <span class="DocParam">ordinal</span> number</li>
+            <li><span class="DocParam">optional</span>: boolean, set to true if this parameter must be included with the command</li>
+            <li><span class="DocParam">ptype</span>: the type of the parameter. e.g., string, float, int, etc..</li>
+        </ul>
+    </li>
+</ul>
+<div class="DocHeading3">Example:</div>
+<span class="DocQuote"><br>
+    =&gt; { "id": "my-id", "command":"list_put" }<br>
+</span><span class="DocQuote">
+{"code": "?OK", "data": [{"paramTypes": [{"ordinal": "0", "optional": false, "pname": "index", "ptype": "int"}, {"ordinal": "1", "optional": false, "pname": "value", "ptype": "float"}], "name": "set_analog_output", "help": "set analog output pin to value"}, {"paramTypes": [{"ordinal": "0", "optional": false, "pname": "rate", "ptype": "float"}], "name": "feedrate", "help": "set the feedrate"}, {"paramTypes": [{"ordinal": "0", "optional": false, "pname": "mdi", "ptype": "string"}], "name": "mdi", "help": "send an MDI command. Maximum 255 chars"}, ...
+</span>
+</div>
+
+<div class="DocCommandDef">
+<span class="DocCommand">put</span>
+<br>
+Send a command to the linuxcnc system to be executed.
+<br>
+<br>
+<div class="DocHeading3">Parameters:</div>
+Command specific.
+<br>
+<div class="DocHeading3">Return Values:</div>
+<span class="DocParam">data</span>:
+Contains a copy of the return code (e.g., "?OK")
+<br>
+<br>
+Additional parameters may also be returned.  In particular, <span class="DocCommand">put</span> of <span class="DocParam">halcmd</span> also returns:<br>
+<ul>
+    <li><span class="DocParam">out</span>: The output of the <span class="DocParam">halcmd</span> execution</li>
+    <li><span class="DocParam">err</span>: The error output of the <span class="DocParam">halcmd</span> execution</li>
+</ul>
+
+<div class="DocHeading3">Example:</div>
+<span class="DocQuote"><br>
+    =&gt; { "id": "my-id", "command":"put", "name":"state", "state":"STATE_OFF" }<br>
+</span><span class="DocQuote">
+{"code": "?OK", "data": "?OK", "id": "my-id"}
+</span><br
+    class="DocQuote">
+<br>
+</div>
+
+
+
+<div class="DocCommandDef">
+<span class="DocCommand">keepalive</span>
+<br>
+Send a notification to linuxcnc that the remote client is still running.
+<br>
+<br>
+<div class="DocHeading3">Parameters:</div>
+None.
+<br>
+<div class="DocHeading3">Return Values:</div>
+<span class="DocParam">data</span>: Contains a copy of the return code (e.g., "?OK")<br>
+<span class="DocParam">elapsed_time</span>: Time since last keepalive was sent<br>
+<span class="DocParam">counter</span>: Number of keepalives received since startup<br>
+<br>
+<div class="DocHeading3">Example:</div>
+<span class="DocQuote"><br>
+    =&gt; { "id": "my-id", "command":"keepalive" }<br>
+</span><span class="DocQuote">
+{"elapsed_time": 7.6190829277038574, "code": "?OK", "data": "?OK", "id": "my-id", "counter": 1}
+</span><br
+    class="DocQuote">
+<br>
+</div>
+
+
+<div class="DocCommandDef">
+<span class="DocCommand">halgraph</span>
+<br>
+Generate a graph of the currently running HAL configuration.
+<br>
+<br>
+<div class="DocHeading3">Parameters:</div>
+None.
+<br>
+<div class="DocHeading3">Return Values:</div>
+<span class="DocParam">data</span>: Contains a copy of the return code (e.g., "?OK")<br>
+<span class="DocParam">link</span>: A path to the .svg file containing the HAL graph.<br>
+<br>
+<div class="DocHeading3">Example:</div>
+<span class="DocQuote"><br>
+    =&gt; { "id": "my-id", "command":"halgraph" }<br>
+</span><span class="DocQuote">
+{"data": "?OK", "code": "?OK", "link": "static/halgraph.svg", "id": "my-id"}
+</span><br
+    class="DocQuote">
+<br>
+</div>
+
+
+<div class="DocCommandDef">
+<span class="DocCommand">get_config</span>
+<br>
+Return a listing of the .INI file for linuxcnc.
+<br>
+<br>
+<div class="DocHeading3">Parameters:</div>
+None.
+<br>
+<div class="DocHeading3">Return Values:</div>
+<span class="DocParam">data</span>: Contains a copy of the return code (e.g., "?OK")<br>
+<span class="DocParam">config_data</span>: contains the INI file data.  Has sub-elements:
+<ul>
+    <li><span class="DocParam">data</span>: An array of values.  Each element of the array contains:
+        <ul>
+            <li><span class="DocParam">values</span>: Contains information on a single key-value pair.
+                <ul>
+                    <li><span class="DocParam">name</span>: The name, or key, of the INI line entry</li>
+                    <li><span class="DocParam">value</span>: The value of the INI line entry.</li>
+                    <li><span class="DocParam">comment</span>: The comment read out of the config file</li>
+                    <li><span class="DocParam">section</span>: The section in which this INI entry was found</li>
+                    <li><span class="DocParam">help</span>: Descriptive help for this entry, if it is found in the help data set.</li>
+                </ul>
+            </li>
+            <li><span class="DocParam">id</span>: A unique ID number for this key-value pair.</li>
+        </ul>
+    </li>
+    <li><span class="DocParam">sections</span>: A dictionary of sections found in the INI file.  Each entry contains:
+        <ul>
+            <li><span class="DocParam">comment</span>: Comments found in the INI file before the section header.</li>
+            <li><span class="DocParam">help</span>: Descriptive help for this section, if it is found in the help data set.</li>
+        </ul>
+    </li>
+</ul>
+<div class="DocHeading3">Example:</div>
+<span class="DocQuote"><br>
+    =&gt; { "id": "my-id", "command":"get_config" }<br>
+</span><span class="DocQuote">
+{"config_data": {"data": [{"values": {"comment": "", "name": "BACKLASH", "default": "0.0000", "section": "AXIS_0", "value": "0.000", "help": "Backlash in machine units. Backlash compensation value can be used to make up for small deficiencies in the hardware used to drive an axis. If backlash is added to an axis and you are using steppers the STEPGEN_MAXACCEL must be increased to 1.5 to 2 times the MAX_ACCELERATION for the axis. "}, "id": 1}, {"values": {"comment": "", "name": "FERROR", "default": "1.0", "section": "AXIS_0", "value": "0.050", "help": "FERROR is the maximum allowable following error, ...
+</span>
+</div>
+
+
+<div class="DocCommandDef">
+<span class="DocCommand">put_config</span>
+<br>
+Write the INI file.
+<br>
+<br>
+<div class="DocHeading3">Parameters:</div>
+
+<span class="DocParam">config_data</span>: Data to write to the INI file.  See get_config for the format.<br>
+<br>
+<div class="DocHeading3">Return Values:</div>
+None.
+<div class="DocHeading3">Example:</div>
+<span class="DocQuote"><br>
+    =&gt; { "id": "my-id", "command":"put_config", "config_data":... }<br>
+</span><span class="DocQuote">
+</span>
+</div>
+
+
+
+<div class="DocCommandDef">
+<span class="DocCommand">get_config_item</span>
+<br>
+Returns a single item from the config file
+<br>
+<br>
+<div class="DocHeading3">Parameters:</div>
+<span class="DocParam">section</span>: The section in the INI file to read from<br>
+<span class="DocParam">name</span>: The name or key of the item desired.<br>
+<br>
+<div class="DocHeading3">Return Values:</div>
+See <span class="DocCommand">get_config</span> command.
+<div class="DocHeading3">Example:</div>
+<span class="DocQuote"><br>
+    =&gt; { "id": "my-id", "command":"get_config_item", "section":"EMCMOT", "name":"SERVO_PERIOD" }<br>
+</span><span class="DocQuote">
+{"config_data": {"data": [{"values": {"comment": " Servo task period, in nano-seconds\n", "name": "SERVO_PERIOD", "default": "1000000", "section": "EMCMOT", "value": "1000000", "help": "This is the \"Servo\" task period in nanoseconds. "}, "id": 82}], "sections": {"EMCMOT": {"comment": " Motion control section ------------------------------------------------------\n", "help": "This section is a custom section and is not used by LinuxCNC directly. Most configurations use values from this section to load the motion controller."}}}, "code": "?OK", "data": "?OK", "id": "my-id"}
+</span>
+</div>
+
+
+
+
+<div class="DocCommandDef">
+<span class="DocCommand">get_hal_file</span>
+<br>
+Reads a specified HAL file and returns it's contents.
+<br>
+<br>
+<div class="DocHeading3">Parameters:</div>
+<span class="DocParam">filename</span>: The filename of the HAL file, as specified in the INI file, HAL section.<br>
+<br>
+<div class="DocHeading3">Return Values:</div>
+<span class="DocParam">hal_data</span>: A string containing the HAL file contents.
+<div class="DocHeading3">Example:</div>
+<span class="DocQuote"><br>
+    =&gt; { "id": "my-id", "command":"get_hal_file", "filename":"core_sim.hal" }<br>
+</span><span class="DocQuote">
+{"hal_data": "# core HAL config file for simulation\n \n# first load all the RT modules that will be needed\n# kinematics\nloadrt trivkins\n# motion controller, get name and thread periods from ini file\nloadrt [EMCMOT]EMCMOT base_period_nsec=[EMCMOT]BASE_PERIOD servo_period_nsec=[EMCMOT]SERVO_PERIOD num_joints=[TRAJ]AXES\n# load 6 differentiators (for velocity and accel signals\nloadrt ddt count=6\n# load additional blocks\nloadrt hypot count=2\nloadrt comp count=3\nloadrt or2 count=1\n\n# add motion controller functions to servo thread\naddf motion-command-handler
+</span>
+</div>
+
+
+
+
+<div class="DocCommandDef">
+<span class="DocCommand">put_hal_file</span>
+<br>
+Writes a specified HAL file in it's entirety.
+<br>
+<br>
+<div class="DocHeading3">Parameters:</div>
+<span class="DocParam">filename</span>: The filename of the HAL file, as specified in the INI file, HAL section.<br>
+<span class="DocParam">hal_data</span>: A string containing the complete HAL file<br>
+<br>
+<div class="DocHeading3">Return Values:</div>
+None
+<div class="DocHeading3">Example:</div>
+<span class="DocQuote"><br>
+    =&gt; { "id": "my-id", "command":"put_hal_file", "filename":"core_sim.hal", "hal_data":"..." }<br>
+</span><span class="DocQuote">
+</span>
+</div>
+
+
+{% end %}
+
+
+
+

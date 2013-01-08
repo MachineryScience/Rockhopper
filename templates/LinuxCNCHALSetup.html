@@ -1,0 +1,61 @@
+<!-- Copyright 2012, 2013 Machinery Science, LLC   -->
+{% extends LinuxCNCTemplate.html %}
+
+{% block definitions %}
+    {% set name = 'halsetup' %}
+{%end%}
+
+{% block label %}<u>H</u>ardware <u>A</u>bstraction <u>L</u>ayer Setup{% end %}
+
+{% block custom_header %}
+    
+    <link rel="stylesheet" href="/static/codemirror-2.36/theme/neat.css">
+    <link rel="stylesheet" href="/static/codemirror-2.36/lib/codemirror.css">
+    <script src="/static/codemirror-2.36/lib/codemirror.js"></script>
+    <link rel="stylesheet" href="/static/codemirror-2.36/lib/util/dialog.css">
+    <script src="/static/codemirror-2.36/lib/util/dialog.js"></script>
+    <script src="/static/codemirror-2.36/mode/hal/hal.js"></script>
+    
+    <style>
+        .CodeMirror {border: 1px solid #500; font-size: medium; background-color: #fafaff; }
+        .CodeMirror-fullscreen { display: block; float:none; clear:both; position: absolute; top: 0; left: 0; width: 100%; z-index: 9999; background-color: white; } 
+        .cm-s-default span.cm-comment {color: green;}
+        .cm-s-default span.cm-operator {color: blue;}
+        .cm-s-default span.cm-number {color: darkblue; }
+        .cm-s-default span.cm-builtin { font-weight: bold; font-style: italic; }
+    </style>        
+{% end %}
+
+{% block custom_body %}
+<div id="wrapbig"></div>
+<p>This section lists the HAL configuration files loaded from the INI file for this system.  
+    HAL stands for Hardware Abstraction Layer, and it is the underpinnings of any linuxcnc system.  
+    The HAL, as configured in these files, controls how the system behaves; 
+    what inputs are connected to which outputs, and what devices and modules are loaded.  
+    For a detailed explaination, see the <a href="http://www.linuxcnc.org/docs/HAL_User_Manual.pdf" target="_blank">HAL User Manual</a>. 
+</p>
+<p>
+    The [HAL] section of the INI file determines which files are listed here.  HAL files are listed
+    in the [HAL] section, with the key names HALFILE and POSTGUI_HALFILE.  See the Configure tab to edit the INI file. 
+</p>
+
+        <div id="top_button_bar">
+        <button type="button" id="HAL_Setup_Save" value="HAL_Setup_Save" onclick="HALSetupSave();">Save Changes</button>
+        </div>
+        
+        <div id="midcol">
+            <div id="wrap">
+                <div id="grid_title"><h2>HAL File Entries:</h2></div>
+                <div id="HALTextEditDIV"><textarea id="HALConfigText"></textarea>To edit full screen, click in the editor an press F11.  Press F11 again, or Esc, to return to normal size.</div>
+            </div>
+            <br>
+        </div>
+
+        <div id="leftcol">
+            <div id="menu_title"><h2>HAL Files:</h2></div>
+            <div id="left_menu"></div>
+        </div>
+
+
+{% end %}
+

@@ -1,0 +1,28 @@
+<!-- Copyright 2012, 2013 Machinery Science, LLC   -->
+{% extends LinuxCNCTemplate.html %}
+
+{% block definitions %}
+    {% set name = 'commands' %}
+{%end%}
+
+{% block label %}Commands{% end %}
+
+{% block custom_header %}
+{% end %}
+
+{% block custom_body %}
+<p>
+    This section gives low-level access to the system commands.  This is not intended as 
+    a normal user interface.  This is a low-level command list for utility and debug
+    usage.
+</p>
+        <p>Command List: <select id="command_list" name="command_list" onchange="CommandSelectChange();"></select><br></p>
+
+        <form name="CommandForm" > 
+            Command: <input type="text" name="command_name"> Parameters: <input type="text" name="parameters" size=150><br>
+        </form><br>
+
+        <button type="button" id="send_command_button" value="Send Command" onclick="CNCCommandSubmit();">Send Command</button><br>        
+{% end %}
+
+
