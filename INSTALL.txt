@@ -1,0 +1,51 @@
+Very terse installation instructions for Rockhopper linuxcnc web socket server.
+
+
+
+Installation:
+
+Download source from github.  Run:
+	git clone git://github.com/MachineryScience/Rockhopper.git
+
+
+The Rockhopper directory can be placed anywhere on your system that you have permissions to access.
+
+The following dependencies are needed to be installed separately:
+
+tornado web server: 
+	Download from http://www.tornadoweb.org/
+	Follow instructions in file to install tornado libraries	
+
+graphviz: 
+	sudo apt-get install graphviz
+
+pygraphviz:
+	sudu apt-get install pygraphviz
+
+
+
+
+Running:
+
+ To launch the webserver:
+
+cd Rockhopper
+python ./LinuxCNCWebSktSvr.py <full path to your .ini file>
+
+Example:
+
+python LinuxCNCWebSktSvr.py /home/linuxcnc-user/linuxcnc/configs/sim/axis/axis.ini 
+
+
+
+
+
+To access the webpage:
+
+Only tested in FireFox and Chrome.  Will DEFINITELY NOT WORK with Internet Explorer.
+
+Point your browser at: 
+	http://your-linuxcnc-computer-ip:8000/
+
+
+That should be it!  
