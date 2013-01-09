@@ -200,7 +200,7 @@ class StatusItem( object ):
 
 
     def read_gcode_file( self, filename ):
-        print filename
+        print "Reading g-code file: ", filename
         try:
             f = open(filename, 'r')
             ret = f.read()
@@ -734,6 +734,8 @@ class LinuxCNCServerCommand( object ):
 
     # update on a watched variable 
     def on_new_poll( self ):
+        if (self.statusitem.name == 'file_content'):
+            return
         if self.server_command_handler.isclosed:
             self.linuxcnc_status_poller.del_observer( self.on_new_poll )
             return
@@ -1170,12 +1172,14 @@ def main():
     #rpdb2.start_embedded_debugger("password")
 
     logging.info("Starting linuxcnc http server...")
+    print "Starting Rockhopper linuxcnc http server."
 
-    application.listen(8000, ssl_options=dict(
-        certfile="server.crt",
-        keyfile="server.key",
-        ca_certs="/etc/ssl/certs/ca-certificates.crt",
-        cert_reqs=ssl.CERT_NONE) )
+    #application.listen(8000, ssl_options=dict(
+        #certfile="server.crt",
+        #keyfile="server.key",
+        #ca_certs="/etc/ssl/certs/ca-certificates.crt",
+        #cert_reqs=ssl.CERT_NONE) )
+    application.listen(8000)
 
     # cause tornado to restart if we edit this file.  Usefull for debugging
     tornado.autoreload.add_reload_hook(fn)

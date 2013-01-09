@@ -139,3 +139,105 @@
 2013-01-08 00:27:36,090Z pid:977 module:web 304 GET /LinuxCNCCommands.html (192.168.1.199) 57.95ms
 2013-01-08 00:28:15,767Z pid:977 module:web 304 GET /LinuxCNCWebServerDoc.html (192.168.1.199) 36.24ms
 2013-01-08 00:28:34,796Z pid:977 module:web 304 GET /LinuxCNCSandbox.html (192.168.1.199) 24.22ms
+2013-01-08 22:55:08,537Z pid:1807 module:LinuxCNCWebSktSvr Starting linuxcnc http server...
+2013-01-08 23:01:03,673Z pid:1807 module:iostream Read error on 10: [Errno 1] _ssl.c:1325: error:14094416:SSL routines:SSL3_READ_BYTES:sslv3 alert certificate unknown
+2013-01-08 23:01:03,674Z pid:1807 module:iostream error on read
+Traceback (most recent call last):
+  File "/usr/local/lib/python2.6/dist-packages/tornado/iostream.py", line 355, in _handle_read
+    if self._read_to_buffer() == 0:
+  File "/usr/local/lib/python2.6/dist-packages/tornado/iostream.py", line 422, in _read_to_buffer
+    chunk = self._read_from_socket()
+  File "/usr/local/lib/python2.6/dist-packages/tornado/iostream.py", line 715, in _read_from_socket
+    chunk = self.socket.read(self.read_chunk_size)
+  File "/usr/lib/python2.6/ssl.py", line 136, in read
+    return self._sslobj.read(len)
+SSLError: [Errno 1] _ssl.c:1325: error:14094416:SSL routines:SSL3_READ_BYTES:sslv3 alert certificate unknown
+2013-01-08 23:01:08,518Z pid:1807 module:web 200 GET / (192.168.1.199) 62.03ms
+2013-01-08 23:01:08,596Z pid:1807 module:web 200 GET /static/tabs.css (192.168.1.199) 60.17ms
+2013-01-08 23:01:08,639Z pid:1807 module:web 200 GET /static/editablegrid-2.0.1/editablegrid-2.0.1.js (192.168.1.199) 32.76ms
+2013-01-08 23:01:08,746Z pid:1807 module:web 200 GET /static/editablegrid-2.0.1/editablegrid-2.0.1.css (192.168.1.199) 2.35ms
+2013-01-08 23:01:08,802Z pid:1807 module:web 200 GET /static/linuxcncclient.js (192.168.1.199) 54.90ms
+2013-01-08 23:01:08,807Z pid:1807 module:web 200 GET /static/chips.png (192.168.1.199) 3.35ms
+2013-01-08 23:01:08,830Z pid:1807 module:web 200 GET /static/tableft4.gif (192.168.1.199) 2.08ms
+2013-01-08 23:01:08,837Z pid:1807 module:web 200 GET /static/tabright4.gif (192.168.1.199) 5.71ms
+2013-01-08 23:01:08,867Z pid:1807 module:web 404 GET /favicon.ico (192.168.1.199) 16.19ms
+2013-01-08 23:01:08,872Z pid:1807 module:web 404 GET /favicon.ico (192.168.1.199) 1.69ms
+2013-01-08 23:01:08,931Z pid:1807 module:web 200 GET /static/editablegrid-2.0.1/images/bullet_arrow_up.png (192.168.1.199) 23.48ms
+2013-01-08 23:01:08,940Z pid:1807 module:web 200 GET /static/editablegrid-2.0.1/images/bullet_arrow_down.png (192.168.1.199) 7.22ms
+2013-01-08 23:01:09,045Z pid:1807 module:web 200 GET /static/menu3.gif (192.168.1.199) 2.41ms
+2013-01-08 23:01:09,073Z pid:1807 module:web 200 GET /static/editablegrid-2.0.1/images/delete.png (192.168.1.199) 27.60ms
+2013-01-08 23:01:09,076Z pid:1807 module:web 200 GET /static/editablegrid-2.0.1/images/duplicate.png (192.168.1.199) 2.04ms
+2013-01-08 23:01:10,804Z pid:1807 module:web 200 GET /LinuxCNCHALSetup.html (192.168.1.199) 28.38ms
+2013-01-08 23:01:10,857Z pid:1807 module:web 200 GET /static/codemirror-2.36/theme/neat.css (192.168.1.199) 24.93ms
+2013-01-08 23:01:10,875Z pid:1807 module:web 200 GET /static/codemirror-2.36/lib/util/dialog.js (192.168.1.199) 15.01ms
+2013-01-08 23:01:10,878Z pid:1807 module:web 200 GET /static/codemirror-2.36/lib/codemirror.css (192.168.1.199) 2.47ms
+2013-01-08 23:01:10,892Z pid:1807 module:web 200 GET /static/codemirror-2.36/mode/hal/hal.js (192.168.1.199) 12.36ms
+2013-01-08 23:01:10,917Z pid:1807 module:web 200 GET /static/codemirror-2.36/lib/codemirror.js (192.168.1.199) 24.86ms
+2013-01-08 23:01:10,922Z pid:1807 module:web 200 GET /static/codemirror-2.36/lib/util/dialog.css (192.168.1.199) 4.25ms
+2013-01-08 23:01:11,929Z pid:1807 module:web 200 GET /LinuxCNCSystem.html (192.168.1.199) 25.17ms
+2013-01-09 12:05:39,675Z pid:1781 module:LinuxCNCWebSktSvr Starting linuxcnc http server...
+2013-01-09 12:06:01,087Z pid:1781 module:web 304 GET / (192.168.1.199) 72.14ms
+2013-01-09 12:06:01,184Z pid:1781 module:web 304 GET /static/tabs.css (192.168.1.199) 80.51ms
+2013-01-09 12:06:01,246Z pid:1781 module:web 304 GET /static/editablegrid-2.0.1/editablegrid-2.0.1.js (192.168.1.199) 22.77ms
+2013-01-09 12:06:01,255Z pid:1781 module:web 304 GET /static/editablegrid-2.0.1/editablegrid-2.0.1.css (192.168.1.199) 1.59ms
+2013-01-09 12:06:01,257Z pid:1781 module:web 304 GET /static/linuxcncclient.js (192.168.1.199) 1.60ms
+2013-01-09 12:06:01,293Z pid:1781 module:web 304 GET /static/chips.png (192.168.1.199) 1.91ms
+2013-01-09 12:06:01,300Z pid:1781 module:web 304 GET /static/tableft4.gif (192.168.1.199) 1.47ms
+2013-01-09 12:06:01,304Z pid:1781 module:web 304 GET /static/tabright4.gif (192.168.1.199) 1.60ms
+2013-01-09 12:06:01,371Z pid:1781 module:web 304 GET /static/editablegrid-2.0.1/images/bullet_arrow_down.png (192.168.1.199) 2.10ms
+2013-01-09 12:06:01,374Z pid:1781 module:web 304 GET /static/editablegrid-2.0.1/images/bullet_arrow_up.png (192.168.1.199) 1.72ms
+2013-01-09 12:06:01,479Z pid:1781 module:web 304 GET /static/menu3.gif (192.168.1.199) 1.93ms
+2013-01-09 12:06:01,482Z pid:1781 module:web 304 GET /static/editablegrid-2.0.1/images/delete.png (192.168.1.199) 1.67ms
+2013-01-09 12:06:01,485Z pid:1781 module:web 304 GET /static/editablegrid-2.0.1/images/duplicate.png (192.168.1.199) 1.71ms
+2013-01-09 12:06:02,586Z pid:1781 module:web 200 GET /LinuxCNCStatus.html (192.168.1.199) 25.02ms
+2013-01-09 12:07:16,195Z pid:1781 module:autoreload LinuxCNCWebSktSvr.py modified; restarting server
+2013-01-09 12:07:16,945Z pid:1781 module:LinuxCNCWebSktSvr Starting linuxcnc http server...
+2013-01-09 12:07:22,973Z pid:1781 module:web 304 GET /LinuxCNCStatus.html (192.168.1.199) 38.28ms
+2013-01-09 12:07:45,444Z pid:1781 module:web 304 GET /LinuxCNCStatus.html (192.168.1.199) 24.37ms
+2013-01-09 12:07:46,514Z pid:1781 module:web 304 GET /LinuxCNCSystem.html (192.168.1.199) 53.18ms
+2013-01-09 12:07:48,935Z pid:1781 module:web 200 GET /LinuxCNCHALGraph.html (192.168.1.199) 28.17ms
+2013-01-09 12:07:49,304Z pid:1781 module:web 200 GET /static/halgraph.svg (192.168.1.199) 26.74ms
+2013-01-09 12:07:50,057Z pid:1781 module:web 304 GET /LinuxCNCStatus.html (192.168.1.199) 24.31ms
+2013-01-09 12:08:01,455Z pid:1781 module:web 200 GET /LinuxCNCSandbox.html (192.168.1.199) 44.15ms
+2013-01-09 12:08:02,146Z pid:1781 module:web 200 GET /LinuxCNCWebServerDoc.html (192.168.1.199) 52.50ms
+2013-01-09 12:08:03,010Z pid:1781 module:web 200 GET /LinuxCNCConfig.html (192.168.1.199) 24.64ms
+2013-01-09 12:09:30,457Z pid:1781 module:autoreload LinuxCNCWebSktSvr.py modified; restarting server
+2013-01-09 12:09:31,212Z pid:1781 module:LinuxCNCWebSktSvr Starting linuxcnc http server...
+2013-01-09 12:09:39,497Z pid:1781 module:web 200 GET /LinuxCNCStatus.html (192.168.1.199) 38.27ms
+2013-01-09 12:09:39,551Z pid:1781 module:web 200 GET /static/tabs.css (192.168.1.199) 43.89ms
+2013-01-09 12:09:39,555Z pid:1781 module:web 200 GET /static/linuxcncclient.js (192.168.1.199) 2.50ms
+2013-01-09 12:09:39,563Z pid:1781 module:web 200 GET /static/chips.png (192.168.1.199) 6.84ms
+2013-01-09 12:09:39,588Z pid:1781 module:web 200 GET /static/tableft4.gif (192.168.1.199) 6.11ms
+2013-01-09 12:09:39,590Z pid:1781 module:web 200 GET /static/tabright4.gif (192.168.1.199) 1.96ms
+2013-01-09 12:09:39,634Z pid:1781 module:web 404 GET /favicon.ico (192.168.1.199) 19.32ms
+2013-01-09 12:09:41,488Z pid:1781 module:web 200 GET /LinuxCNCCommands.html (192.168.1.199) 44.86ms
+2013-01-09 12:09:42,509Z pid:1781 module:web 304 GET /LinuxCNCStatus.html (192.168.1.199) 24.21ms
+2013-01-09 12:09:43,756Z pid:1781 module:web 200 GET /LinuxCNCSystem.html (192.168.1.199) 24.80ms
+2013-01-09 12:09:45,082Z pid:1781 module:web 304 GET /LinuxCNCStatus.html (192.168.1.199) 24.21ms
+2013-01-09 12:09:46,500Z pid:1781 module:web 304 GET /LinuxCNCStatus.html (192.168.1.199) 24.11ms
+2013-01-09 12:10:10,977Z pid:1781 module:web 200 GET / (192.168.1.199) 23.03ms
+2013-01-09 12:10:11,015Z pid:1781 module:web 200 GET /static/editablegrid-2.0.1/editablegrid-2.0.1.css (192.168.1.199) 28.78ms
+2013-01-09 12:10:11,019Z pid:1781 module:web 200 GET /static/editablegrid-2.0.1/editablegrid-2.0.1.js (192.168.1.199) 2.53ms
+2013-01-09 12:10:13,275Z pid:1781 module:web 304 GET /LinuxCNCSystem.html (192.168.1.199) 23.63ms
+2013-01-09 12:10:19,566Z pid:1781 module:web 200 GET /LinuxCNCHALGraph.html (192.168.1.199) 23.12ms
+2013-01-09 12:10:20,500Z pid:1781 module:web 304 GET /LinuxCNCStatus.html (192.168.1.199) 24.19ms
+2013-01-09 12:10:45,898Z pid:1781 module:web 304 GET /LinuxCNCStatus.html (192.168.1.199) 24.46ms
+2013-01-09 12:10:46,851Z pid:1781 module:web 304 GET /LinuxCNCSystem.html (192.168.1.199) 23.80ms
+2013-01-09 12:10:47,792Z pid:1781 module:web 304 GET /LinuxCNCStatus.html (192.168.1.199) 30.48ms
+2013-01-09 12:10:48,791Z pid:1781 module:web 304 GET /LinuxCNCCommands.html (192.168.1.199) 28.29ms
+2013-01-09 12:10:50,495Z pid:1781 module:web 304 GET /LinuxCNCCommands.html (192.168.1.199) 23.45ms
+2013-01-09 12:10:50,508Z pid:1781 module:web 200 GET /static/linuxcncclient.js (192.168.1.199) 2.92ms
+2013-01-09 12:10:50,510Z pid:1781 module:web 304 GET /static/tabs.css (192.168.1.199) 1.45ms
+2013-01-09 12:10:50,534Z pid:1781 module:web 304 GET /static/chips.png (192.168.1.199) 1.94ms
+2013-01-09 12:10:50,538Z pid:1781 module:web 304 GET /static/tableft4.gif (192.168.1.199) 1.47ms
+2013-01-09 12:10:50,541Z pid:1781 module:web 304 GET /static/tabright4.gif (192.168.1.199) 1.51ms
+2013-01-09 12:10:51,973Z pid:1781 module:web 304 GET /LinuxCNCStatus.html (192.168.1.199) 24.58ms
+2013-01-09 12:10:53,442Z pid:1781 module:web 304 GET /LinuxCNCSystem.html (192.168.1.199) 29.39ms
+2013-01-09 12:10:54,761Z pid:1781 module:web 304 GET /LinuxCNCStatus.html (192.168.1.199) 30.03ms
+2013-01-09 12:11:03,503Z pid:1781 module:web 304 GET / (192.168.1.199) 23.19ms
+2013-01-09 12:11:03,607Z pid:1781 module:web 200 GET /static/editablegrid-2.0.1/images/bullet_arrow_up.png (192.168.1.199) 24.74ms
+2013-01-09 12:11:03,610Z pid:1781 module:web 200 GET /static/editablegrid-2.0.1/images/bullet_arrow_down.png (192.168.1.199) 1.96ms
+2013-01-09 12:11:03,705Z pid:1781 module:web 200 GET /static/editablegrid-2.0.1/images/delete.png (192.168.1.199) 6.42ms
+2013-01-09 12:11:03,708Z pid:1781 module:web 200 GET /static/editablegrid-2.0.1/images/duplicate.png (192.168.1.199) 1.90ms
+2013-01-09 12:11:03,711Z pid:1781 module:web 200 GET /static/menu3.gif (192.168.1.199) 1.93ms
+2013-01-09 12:11:10,383Z pid:1781 module:web 304 GET / (192.168.1.199) 23.25ms

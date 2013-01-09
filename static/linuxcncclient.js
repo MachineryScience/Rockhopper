@@ -990,7 +990,7 @@ function PollLinuxCNC( type )
 {
     document.getElementById("AltWebSocketData").style.display="none"; 
     
-    ws = new WebSocket("wss://" + document.domain + ":8000/websocket/linuxcnc","linuxcnc");
+    ws = new WebSocket("ws://" + document.domain + ":8000/websocket/linuxcnc","linuxcnc");
     if (type == 'status')
         ws.onopen = StatusSocketOpen;
     else if (type == 'commands')
