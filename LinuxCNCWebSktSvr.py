@@ -26,7 +26,6 @@ import tornado.ioloop
 import tornado.web
 import tornado.autoreload
 import tornado.websocket
-#import rpdb2
 import logging
 import json
 import subprocess
@@ -37,6 +36,9 @@ from copy import deepcopy
 import re
 import ssl
 import GCodeReader
+from ConfigParser import SafeConfigParser
+import hashlib
+#import rpdb2
 
 UpdateStatusPollPeriodInMilliSeconds = 5
 eps = float(0.000001)
@@ -120,6 +122,11 @@ class LinuxCNCStatusPoller(object):
                 self.sig_dict[ p[6] ] = p[3]
             if len(p) >= 5:
                 self.pin_dict[ p[4] ] = p[3]
+        # cleanup -- make sure the sub-process has stopped
+        try:
+            p.kill()
+        except:
+            pass
 
     def poll_update(self):
         global linuxcnc_command
@@ -1081,21 +1088,45 @@ class LinuxCNCServerCommand( object ):
 
 
 
+
 # *****************************************************
 # *****************************************************
 class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
 
-    #def __init__(self):
-        #super( tornado.websocket.WebSocketHandler, self ).__init__()
+    def __init__(self, *args, **kwargs):
+        super( LinuxCNCCommandWebSocketHandler, self ).__init__( *args, **kwargs )
+        self.user_validated = False
+        self.userdict = {}
+        try:
+            parser = SafeConfigParser() 
+            parser.read('users.ini')
+            for name, value in parser.items('users'):
+                self.userdict[name] = value
+        except:
+            pass
 
     def open(self,arg):
         global LINUXCNCSTATUS
         self.isclosed = False
         logging.debug("WebSocket opened")
 
-    def on_message(self, message):
+    def on_message(self, message): 
         global LINUXCNCSTATUS
-        self.write_message(LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, message ).execute())
+        if (self.user_validated):
+            self.write_message(LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, message ).execute())
+        else:
+            try:
+                commandDict = json.loads( message )
+                user = commandDict['user'].strip()
+                pw = hashlib.md5(commandDict['password'].strip()).hexdigest()
+                if ( ( user in self.userdict ) and ( self.userdict.get(user) == pw ) ):
+                    self.user_validated = True
+                    self.write_message(json.dumps( {'code':'?OK', 'data':'?OK'}, cls=StatusItemEncoder ))
+                else:
+                    self.write_message(json.dumps( {'code':'?User not logged in', 'data':'?User not logged in'}, cls=StatusItemEncoder ))
+            except:
+                self.write_message(json.dumps( {'code':'?User not logged in', 'data':'?User not logged in'}, cls=StatusItemEncoder ))
+            
 
     def send_message( self, message_to_send ):
         self.write_message( message_to_send )
@@ -1107,8 +1138,8 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
     def select_subprotocol(self, subprotocols):
         if ('linuxcnc' in subprotocols ):
             return 'linuxcnc'
-        elif (subprotocols == ['']):
-            return ''
+        elif (subprotocols == ['']): # some websocket clients don't support subprotocols, so allow this if they just provide an empty string
+            return '' 
         else:
             logging.warning('WEBSOCKET CLOSED: sub protocol linuxcnc not supported')
             logging.warning( 'Subprotocols: ' + subprotocols.__str__() )
@@ -1174,12 +1205,13 @@ def main():
     logging.info("Starting linuxcnc http server...")
     print "Starting Rockhopper linuxcnc http server."
 
-    #application.listen(8000, ssl_options=dict(
-        #certfile="server.crt",
-        #keyfile="server.key",
-        #ca_certs="/etc/ssl/certs/ca-certificates.crt",
-        #cert_reqs=ssl.CERT_NONE) )
-    application.listen(8000)
+    # see http://www.akadia.com/services/ssh_test_certificate.html to learn how to generate a new server SSL certificate
+    application.listen(8000, ssl_options=dict(
+        certfile="server.crt",
+        keyfile="server.key",
+        ca_certs="/etc/ssl/certs/ca-certificates.crt",
+        cert_reqs=ssl.CERT_NONE) )
+    #application.listen(8000)
 
     # cause tornado to restart if we edit this file.  Usefull for debugging
     tornado.autoreload.add_reload_hook(fn)

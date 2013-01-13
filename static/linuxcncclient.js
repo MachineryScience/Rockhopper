@@ -30,6 +30,34 @@ var HALCodeMirror;
 // WebSocket for communication to the linuxcnc server
 var ws;
 
+
+
+function createCookie(name,value,days,path) {
+        var expires = ""
+	if (days) {
+		var date = new Date();
+		date.setTime(date.getTime()+(days*24*60*60*1000));
+		expires = "; expires="+date.toGMTString();
+	}
+	document.cookie = name+"="+value+expires+"; path="+path;
+}
+
+function readCookie(name) {
+	var nameEQ = name + "=";
+	var ca = document.cookie.split(';');
+	for(var i=0;i < ca.length;i++) {
+		var c = ca[i];
+		while (c.charAt(0)==' ') c = c.substring(1,c.length);
+		if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length,c.length);
+	}
+	return null;
+}
+
+function eraseCookie(name) {
+	createCookie(name,"",-1);
+}
+
+
 // utility function: convert objects to strings
 function dumpObject(obj, maxDepth) {  
     var dump = function(obj, name, depth, tab){  
@@ -228,9 +256,6 @@ function MessageHandlerServerReply(evt)
     else
         outputcell.innerHTML = prepend + result["data"].toString().trim().replace( /\n/g, "<br/>" );
 }
-
-
-
 
 
 // **********************************
@@ -982,6 +1007,57 @@ function MonitorWebSocket()
     }
 }
 
+
+function LoginMessage(evt)
+{
+    var result = JSON.parse(evt.data);
+    if (result["code"] == "?OK")
+    {
+        ws.custom_onopen();
+        document.getElementById("logout_button").innerHTML = "Logout User " + readCookie("linuxcnc_username");
+    }
+    else
+    {
+        Logout();
+        alert("Error Logging in.  Server message: " + result["code"]);
+    }
+}
+
+function Logout()
+{
+    eraseCookie("linuxcnc_username");
+    eraseCookie("linuxcnc_password");
+    ws.close();        
+    document.getElementById("logout_button").style.display = "none";
+}
+
+function Login()
+{
+    var name = readCookie("linuxcnc_username");
+    var pw = readCookie("linuxcnc_password");
+    if (name == null || pw == null)
+        {
+            name = prompt("Enter Username");
+            if (name != null)
+            {
+                pw = prompt("Enter password");
+                if (pw != null)
+                {
+                    createCookie("linuxcnc_username",name,365,"/"); 
+                    createCookie("linuxcnc_password",pw,365,"/");
+                }
+            }
+        }
+    
+    if (name != null && pw != null)
+    {
+        ws.send( JSON.stringify({ "id":"Login", "user":name, "password":pw }) ) ;
+        ws.onmessage = LoginMessage;
+    } else {
+        Logout();
+    }
+}
+
 // INITIAL CALL on onload event.  This starts off the sequence
 // of getting a list of status items from the server, making a 
 // table to display them, and then monitoring updates to their 
@@ -990,25 +1066,28 @@ function PollLinuxCNC( type )
 {
     document.getElementById("AltWebSocketData").style.display="none"; 
     
-    ws = new WebSocket("ws://" + document.domain + ":8000/websocket/linuxcnc","linuxcnc");
+    ws = new WebSocket("wss://" + document.domain + ":8000/websocket/linuxcnc","linuxcnc");
+    
+    ws.onopen = Login;
+    
     if (type == 'status')
-        ws.onopen = StatusSocketOpen;
+        ws.custom_onopen = StatusSocketOpen;
     else if (type == 'commands')
-        ws.onopen = CommandSocketOpen;
+        ws.custom_onopen = CommandSocketOpen;
     else if (type == 'keepalive')
-        ws.onopen = KeepaliveSocketOpen;
+        ws.custom_onopen = KeepaliveSocketOpen;
     else if (type == 'halgraph')
-        ws.onopen = HALGraphSocketOpen;
+        ws.custom_onopen = HALGraphSocketOpen;
     else if (type == 'config')
-        ws.onopen = ConfigSocketOpen;
+        ws.custom_onopen = ConfigSocketOpen;
     else if (type == 'halsetup')
-        ws.onopen = HALSetupSocketOpen;
+        ws.custom_onopen = HALSetupSocketOpen;
     else if (type == 'sandbox')
-        ws.onopen = SandboxSocketOpen;
+        ws.custom_onopen = SandboxSocketOpen;
     else if (type == 'system')
-        ws.onopen = SystemSocketOpen;
+        ws.custom_onopen = SystemSocketOpen;
 
-    if (!( ws.onopen == undefined ))
+    if (!( ws.custom_onopen == undefined ))
     {
         // monitor for a closed WebSocket
         window.setInterval(MonitorWebSocket,250);
@@ -1016,5 +1095,4 @@ function PollLinuxCNC( type )
         document.getElementById("WebSocketData").style.display="block";
         document.getElementById("AltWebSocketData").style.display="none";        
     }
-
 }
