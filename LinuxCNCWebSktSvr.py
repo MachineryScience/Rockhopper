@@ -38,6 +38,7 @@ import ssl
 import GCodeReader
 from ConfigParser import SafeConfigParser
 import hashlib
+import base64
 #import rpdb2
 
 UpdateStatusPollPeriodInMilliSeconds = 5
@@ -207,7 +208,6 @@ class StatusItem( object ):
 
 
     def read_gcode_file( self, filename ):
-        print "Reading g-code file: ", filename
         try:
             f = open(filename, 'r')
             ret = f.read()
@@ -714,20 +714,24 @@ class LinuxCNCServerCommand( object ):
     REPLY_MISSING_COMMAND_PARAMETER = '?Missing Parameter'
     REPLY_LINUXCNC_NOT_RUNNING = '?LinuxCNC is not running'
     REPLY_COMMAND_OK = '?OK'
+    REPLY_INVALID_USERID = '?Invalid User ID'
 
-    def __init__( self, statusItems, commandItems, server_command_handler, status_poller,  command_message='{"command": "invalid"}' ):
+    def __init__( self, statusItems, commandItems, server_command_handler, status_poller, command_message='{"command": "invalid"}', command_dict=None ):
         self.linuxcnc_status_poller = status_poller
         self.command_message = command_message
         self.StatusItems = statusItems
         self.CommandItems = commandItems
         self.server_command_handler = server_command_handler
-                
-        try:
-            self.commandDict = json.loads( command_message )
-            self.command = self.commandDict['command'].strip()
-        except:
-            self.commandDict = {'command': 'invalid'}
-            self.command = 'invalid'
+        if (command_dict is None):        
+            try:
+                self.commandDict = json.loads( command_message )
+                self.command = self.commandDict['command'].strip()
+            except:
+                self.commandDict = {'command': 'invalid'}
+                self.command = 'invalid'
+        else:
+            self.commandDict = command_dict
+            self.command = command_dict.get('command','invalid')
 
     # Convert self.replyval into a JSON string suitable to return to the command originator
     def form_reply( self ):
@@ -1032,7 +1036,6 @@ class LinuxCNCServerCommand( object ):
         elif (self.command == 'keepalive'):
             global HAL_INTERFACE
             try:
-                print "OK:"
                 HAL_INTERFACE.Tick()
                 self.replyval['code'] = LinuxCNCServerCommand.REPLY_COMMAND_OK
                 self.replyval['counter'] = HAL_INTERFACE.keepalive_counter
@@ -1096,36 +1099,30 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
     def __init__(self, *args, **kwargs):
         super( LinuxCNCCommandWebSocketHandler, self ).__init__( *args, **kwargs )
         self.user_validated = False
-        self.userdict = {}
-        try:
-            parser = SafeConfigParser() 
-            parser.read('users.ini')
-            for name, value in parser.items('users'):
-                self.userdict[name] = value
-        except:
-            pass
+        print "New websocket Connection..."
 
     def open(self,arg):
         global LINUXCNCSTATUS
         self.isclosed = False
-        logging.debug("WebSocket opened")
 
     def on_message(self, message): 
         global LINUXCNCSTATUS
         if (self.user_validated):
-            self.write_message(LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, message ).execute())
+            self.write_message(LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_message=message ).execute())
         else:
             try:
+                global userdict
                 commandDict = json.loads( message )
+                id = commandDict.get('id','Login').strip()
                 user = commandDict['user'].strip()
                 pw = hashlib.md5(commandDict['password'].strip()).hexdigest()
-                if ( ( user in self.userdict ) and ( self.userdict.get(user) == pw ) ):
+                if ( ( user in userdict ) and ( userdict.get(user) == pw ) ):
                     self.user_validated = True
-                    self.write_message(json.dumps( {'code':'?OK', 'data':'?OK'}, cls=StatusItemEncoder ))
+                    self.write_message(json.dumps( { 'id':id, 'code':'?OK', 'data':'?OK'}, cls=StatusItemEncoder ))
                 else:
-                    self.write_message(json.dumps( {'code':'?User not logged in', 'data':'?User not logged in'}, cls=StatusItemEncoder ))
+                    self.write_message(json.dumps( { 'id':id, 'code':'?User not logged in', 'data':'?User not logged in'}, cls=StatusItemEncoder ))
             except:
-                self.write_message(json.dumps( {'code':'?User not logged in', 'data':'?User not logged in'}, cls=StatusItemEncoder ))
+                self.write_message(json.dumps( { 'id':id, 'code':'?User not logged in', 'data':'?User not logged in'}, cls=StatusItemEncoder ))
             
 
     def send_message( self, message_to_send ):
@@ -1147,6 +1144,136 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
             return None
 
 
+def check_user( user, pw ):
+    # check if the user/pw combo is in our dictionary
+    user = user.strip()
+    pw = hashlib.md5(pw.strip()).hexdigest()
+    global userdict
+    if ( ( user in userdict ) and ( userdict.get(user) == pw ) ):
+        return True
+    else:
+        return False
+
+# *****************************************************
+# *****************************************************
+# A decorator that lets you require HTTP basic authentication from visitors.
+#
+# Kevin Kelley <kelleyk@kelleyk.net> 2011
+# Use however makes you happy, but if it breaks, you get to keep both pieces.
+# Post with explanation, commentary, etc.:
+# http://kelleyk.com/post/7362319243/easy-basic-http-authentication-with-tornado
+# Usage example:
+#@require_basic_auth
+#class MainHandler(tornado.web.RequestHandler):
+# def get(self, basicauth_user, basicauth_pass):
+# self.write('Hi there, {0}! Your password is {1}.' \
+# .format(basicauth_user, basicauth_pass))
+# def post(self, **kwargs):
+# basicauth_user = kwargs['basicauth_user']
+# basicauth_pass = kwargs['basicauth_pass']
+# self.write('Hi there, {0}! Your password is {1}.' \
+# .format(basicauth_user, basicauth_pass))
+# *****************************************************
+# *****************************************************
+def require_basic_auth(handler_class):
+    def wrap_execute(handler_execute):
+        def require_basic_auth(handler, kwargs):
+            auth_header = handler.request.headers.get('Authorization')
+            if auth_header is None or not auth_header.startswith('Basic '):
+                print auth_header
+                handler.set_status(401)
+                handler.set_header('WWW-Authenticate', 'Basic realm=Restricted')
+                handler._transforms = []
+                handler.finish()
+                print "Authorization Challenge"
+                return False
+            auth_decoded = base64.decodestring(auth_header[6:])
+            user, pw = auth_decoded.split(':', 2)
+
+            # check if the user/pw combo is in our dictionary
+            return check_user( user, pw )
+        
+        def _execute(self, transforms, *args, **kwargs):
+            if not require_basic_auth(self, kwargs):
+                return False
+            return handler_execute(self, transforms, *args, **kwargs)
+        return _execute
+
+    handler_class._execute = wrap_execute(handler_class._execute)
+    return handler_class
+
+
+
+# *****************************************************
+@require_basic_auth
+class PollHandler(tornado.web.RequestHandler):
+    def get(self, arg):
+        self.set_header("Content-Type", "application/json")
+        args = arg.split("/")
+        args = [tornado.escape.url_unescape(x) for x in args]
+        command_dict = {'command':args[0]}
+        for idx in range(1,len(args),2):
+            try:
+                val = args[idx+1]
+                # try and convert anything that is a number to an actual number (not a string)
+                # use int formatting if possible, otherwise use float
+                v1 = float(val)
+                v2 = int(val)
+                if (v1 == v2):
+                    val = v2
+                else:
+                    val = v1
+            except:
+                pass
+            command_dict[args[idx]] = val
+        self.write(LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_dict=command_dict ).execute())
+        self.finish()
+
+
+# *****************************************************  
+@require_basic_auth
+class PollHandlerJSON(tornado.web.RequestHandler):
+    def get(self, arg):
+        self.set_header("Content-Type", "application/json")
+        arg = tornado.escape.url_unescape(arg)
+        self.write(LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_message=arg ).execute())
+        self.finish()
+  
+# *****************************************************
+class PollHeaderLogin(tornado.web.RequestHandler):
+    def get(self, arg):
+        
+        self.set_header("Content-Type", "application/json")
+        login = False
+        if "user" in self.request.headers:
+            if "pw" in self.request.headers:
+                if check_user( self.request.headers["user"], self.request.headers["pw"] ):
+                    login = True
+        if not login:
+            self.write( json.dumps({'code':LinuxCNCServerCommand.REPLY_INVALID_USERID} ) )
+            self.finish()
+            return
+
+        command_dict = {}
+        for k in self.request.arguments:
+            try:
+                val = self.get_argument(k)
+                # try and convert anything that is a number to an actual number (not a string)
+                # use int formatting if possible, otherwise use float
+                v1 = float(val)
+                v2 = int(val)
+                if (v1 == v2):
+                    val = v2
+                else:
+                    val = v1
+            except:
+                pass
+            command_dict[k] = val
+
+        print command_dict
+        
+        self.write(LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_dict=command_dict ).execute())
+        self.finish()
 
 # *****************************************************
 # *****************************************************
@@ -1156,6 +1283,8 @@ class MainHandler(tornado.web.RequestHandler):
             self.render( 'LinuxCNCConfig.html' )
         else:
             self.render( arg )        
+
+
 
   
 # ********************************
@@ -1172,8 +1301,13 @@ elif __file__:
     application_path = os.path.dirname(__file__)
 
 # The main application object:
+# the /command/ and /polljason/ use HTTP Basic Authorization to log in.
+# the /pollhl/ use HTTP header arguments to log in
 application = tornado.web.Application([
     (r"/([^\\/]*)", MainHandler, {} ),
+    (r"/command/(.*)", PollHandler, {} ),  
+    (r"/polljson/(.*)", PollHandlerJSON, {} ),
+    (r"/query/(.*)", PollHeaderLogin, {} ),
     (r"/websocket/(.*)", LinuxCNCCommandWebSocketHandler, {} ),
     ],
     debug=True,
@@ -1190,6 +1324,7 @@ application = tornado.web.Application([
 def main():
     global INI_FILENAME
     global INI_FILE_PATH
+    global userdict
     def fn():
         print "Webserver reloading..."
 
@@ -1198,9 +1333,21 @@ def main():
     INI_FILENAME = sys.argv[1]
     [INI_FILE_PATH, x] = os.path.split( INI_FILENAME )
 
-    logging.basicConfig(filename=os.path.join(application_path,'linuxcnc_webserver.log'),format='%(asctime)sZ pid:%(process)s module:%(module)s %(message)s', level=logging.INFO)
+    logging.basicConfig(filename=os.path.join(application_path,'linuxcnc_webserver.log'),format='%(asctime)sZ pid:%(process)s module:%(module)s %(message)s', level=logging.ERROR)
+
 
     #rpdb2.start_embedded_debugger("password")
+
+    logging.info("Reading user list...")
+    userdict = {}
+    try:
+        parser = SafeConfigParser() 
+        parser.read('users.ini')
+        for name, value in parser.items('users'):
+            userdict[name] = value
+    except:
+        pass
+
 
     logging.info("Starting linuxcnc http server...")
     print "Starting Rockhopper linuxcnc http server."
