@@ -1180,12 +1180,11 @@ def require_basic_auth(handler_class):
         def require_basic_auth(handler, kwargs):
             auth_header = handler.request.headers.get('Authorization')
             if auth_header is None or not auth_header.startswith('Basic '):
-                print auth_header
                 handler.set_status(401)
                 handler.set_header('WWW-Authenticate', 'Basic realm=Restricted')
                 handler._transforms = []
                 handler.finish()
-                print "Authorization Challenge"
+                print "Authorization Challenge - login failed."
                 return False
             auth_decoded = base64.decodestring(auth_header[6:])
             user, pw = auth_decoded.split(':', 2)
@@ -1208,6 +1207,12 @@ def require_basic_auth(handler_class):
 @require_basic_auth
 class PollHandler(tornado.web.RequestHandler):
     def get(self, arg):
+
+        # if this request is sending a callback, then assume jsonp for return type
+        jsonp = self.get_argument("callback", None)
+        if (jsonp is None):
+            jsonp = self.get_argument("jsonp", None)
+                    
         self.set_header("Content-Type", "application/json")
         args = arg.split("/")
         args = [tornado.escape.url_unescape(x) for x in args]
@@ -1226,7 +1231,10 @@ class PollHandler(tornado.web.RequestHandler):
             except:
                 pass
             command_dict[args[idx]] = val
-        self.write(LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_dict=command_dict ).execute())
+        if (jsonp is not None):
+            self.write( jsonp + '(' +  LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_dict=command_dict ).execute() + ')' )
+        else:
+            self.write(LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_dict=command_dict ).execute())
         self.finish()
 
 
@@ -1236,13 +1244,23 @@ class PollHandlerJSON(tornado.web.RequestHandler):
     def get(self, arg):
         self.set_header("Content-Type", "application/json")
         arg = tornado.escape.url_unescape(arg)
-        self.write(LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_message=arg ).execute())
+        jsonp = self.get_argument("callback", None)
+        if (jsonp is None):
+            jsonp = self.get_argument("jsonp", None)
+                    
+        if (jsonp is not None):
+            self.write( jsonp + '(' + LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_message=arg ).execute() + ')' )
+        else:
+            self.write(LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_message=arg ).execute())
         self.finish()
   
 # *****************************************************
 class PollHeaderLogin(tornado.web.RequestHandler):
     def get(self, arg):
-        
+        self.write( json.dumps({'code':'?OK'}) )
+        self.finish()
+        return
+
         self.set_header("Content-Type", "application/json")
         login = False
         if "user" in self.request.headers:
@@ -1250,9 +1268,12 @@ class PollHeaderLogin(tornado.web.RequestHandler):
                 if check_user( self.request.headers["user"], self.request.headers["pw"] ):
                     login = True
         if not login:
-            self.write( json.dumps({'code':LinuxCNCServerCommand.REPLY_INVALID_USERID} ) )
+            print "Login Failed in query."
+            self.write( json.dumps({'code':'?Invalid User ID'}) )
             self.finish()
             return
+
+
 
         command_dict = {}
         for k in self.request.arguments:
@@ -1270,9 +1291,15 @@ class PollHeaderLogin(tornado.web.RequestHandler):
                 pass
             command_dict[k] = val
 
-        print command_dict
-        
-        self.write(LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_dict=command_dict ).execute())
+        jsonp = self.get_argument("callback", None)
+        if (jsonp is None):
+            jsonp = self.get_argument("jsonp", None)
+            
+        if (jsonp is not None):
+            self.write( jsonp + '(' + LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_dict=command_dict ).execute() + ')' )
+        else:
+            self.write(LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_dict=command_dict ).execute())
+            
         self.finish()
 
 # *****************************************************
@@ -1353,11 +1380,14 @@ def main():
     print "Starting Rockhopper linuxcnc http server."
 
     # see http://www.akadia.com/services/ssh_test_certificate.html to learn how to generate a new server SSL certificate
+    # for httpS protocol:
     application.listen(8000, ssl_options=dict(
         certfile="server.crt",
         keyfile="server.key",
         ca_certs="/etc/ssl/certs/ca-certificates.crt",
         cert_reqs=ssl.CERT_NONE) )
+
+    # for non-httpS (plain old http):
     #application.listen(8000)
 
     # cause tornado to restart if we edit this file.  Usefull for debugging
