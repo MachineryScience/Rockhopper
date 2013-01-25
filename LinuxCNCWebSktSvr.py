@@ -41,7 +41,8 @@ import hashlib
 import base64
 #import rpdb2
 
-UpdateStatusPollPeriodInMilliSeconds = 5
+UpdateStatusPollPeriodInMilliSeconds = 50
+UpdateHALPollPeriodDivisor = 1
 eps = float(0.000001)
 
 main_loop = tornado.ioloop.IOLoop.instance()
@@ -132,7 +133,7 @@ class LinuxCNCStatusPoller(object):
     def poll_update(self):
         global linuxcnc_command
         # update HAL pins, and also check if linuxcnc is up and running
-        if self.counter > 10:
+        if self.counter > UpdateHALPollPeriodDivisor:
             self.hal_poll_update()
             self.counter = 0
         else:
