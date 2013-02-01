@@ -41,7 +41,7 @@ import hashlib
 import base64
 #import rpdb2
 
-UpdateStatusPollPeriodInMilliSeconds = 50
+UpdateStatusPollPeriodInMilliSeconds = 100
 UpdateHALPollPeriodDivisor = 1
 eps = float(0.000001)
 
@@ -1106,8 +1106,12 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
         global LINUXCNCSTATUS
         self.isclosed = False
 
+    def allow_draft76(self):
+        return True    
+
     def on_message(self, message): 
         global LINUXCNCSTATUS
+        
         if (self.user_validated):
             self.write_message(LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_message=message ).execute())
         else:
@@ -1213,8 +1217,7 @@ class PollHandler(tornado.web.RequestHandler):
         jsonp = self.get_argument("callback", None)
         if (jsonp is None):
             jsonp = self.get_argument("jsonp", None)
-                    
-        self.set_header("Content-Type", "application/json")
+        
         args = arg.split("/")
         args = [tornado.escape.url_unescape(x) for x in args]
         command_dict = {'command':args[0]}
@@ -1232,9 +1235,13 @@ class PollHandler(tornado.web.RequestHandler):
             except:
                 pass
             command_dict[args[idx]] = val
+
+        self.set_header("Access-Control-Allow-Origin","*")
         if (jsonp is not None):
+            self.set_header("Content-Type", "application/javascript")
             self.write( jsonp + '(' +  LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_dict=command_dict ).execute() + ')' )
         else:
+            self.set_header("Content-Type", "application/json")
             self.write(LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_dict=command_dict ).execute())
         self.finish()
 
@@ -1243,15 +1250,18 @@ class PollHandler(tornado.web.RequestHandler):
 @require_basic_auth
 class PollHandlerJSON(tornado.web.RequestHandler):
     def get(self, arg):
-        self.set_header("Content-Type", "application/json")
+        
         arg = tornado.escape.url_unescape(arg)
         jsonp = self.get_argument("callback", None)
         if (jsonp is None):
             jsonp = self.get_argument("jsonp", None)
-                    
+
+        self.set_header("Access-Control-Allow-Origin","*")            
         if (jsonp is not None):
+            self.set_header("Content-Type", "application/javascript")
             self.write( jsonp + '(' + LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_message=arg ).execute() + ')' )
         else:
+            self.set_header("Content-Type", "application/json")
             self.write(LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_message=arg ).execute())
         self.finish()
   
@@ -1262,7 +1272,6 @@ class PollHeaderLogin(tornado.web.RequestHandler):
         self.finish()
         return
 
-        self.set_header("Content-Type", "application/json")
         login = False
         if "user" in self.request.headers:
             if "pw" in self.request.headers:
@@ -1270,11 +1279,10 @@ class PollHeaderLogin(tornado.web.RequestHandler):
                     login = True
         if not login:
             print "Login Failed in query."
+            self.set_header("Content-Type", "application/json")
             self.write( json.dumps({'code':'?Invalid User ID'}) )
             self.finish()
             return
-
-
 
         command_dict = {}
         for k in self.request.arguments:
@@ -1295,10 +1303,13 @@ class PollHeaderLogin(tornado.web.RequestHandler):
         jsonp = self.get_argument("callback", None)
         if (jsonp is None):
             jsonp = self.get_argument("jsonp", None)
-            
+
+        self.set_header("Access-Control-Allow-Origin","*")    
         if (jsonp is not None):
+            self.set_header("Content-Type", "application/javascript")
             self.write( jsonp + '(' + LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_dict=command_dict ).execute() + ')' )
         else:
+            self.set_header("Content-Type", "application/json")
             self.write(LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_dict=command_dict ).execute())
             
         self.finish()
@@ -1382,21 +1393,21 @@ def main():
 
     # see http://www.akadia.com/services/ssh_test_certificate.html to learn how to generate a new server SSL certificate
     # for httpS protocol:
-    application.listen(8000, ssl_options=dict(
-        certfile="server.crt",
-        keyfile="server.key",
-        ca_certs="/etc/ssl/certs/ca-certificates.crt",
-        cert_reqs=ssl.CERT_NONE) )
+    #application.listen(8000, ssl_options=dict(
+    #    certfile="server.crt",
+    #    keyfile="server.key",
+    #    ca_certs="/etc/ssl/certs/ca-certificates.crt",
+    #    cert_reqs=ssl.CERT_NONE) )
 
     # for non-httpS (plain old http):
-    #application.listen(8000)
+    application.listen(8000)
 
     # cause tornado to restart if we edit this file.  Usefull for debugging
     tornado.autoreload.add_reload_hook(fn)
     tornado.autoreload.start()
 
     # start up the webserver loop
-    main_loop.start()
+    main_loop.start() 
 
 # auto start if executed from the command line
 if __name__ == "__main__":
