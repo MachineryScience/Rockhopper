@@ -40,6 +40,7 @@ from ConfigParser import SafeConfigParser
 import hashlib
 import base64
 #import rpdb2
+import socket
 
 UpdateStatusPollPeriodInMilliSeconds = 100
 UpdateHALPollPeriodDivisor = 1
@@ -105,6 +106,11 @@ class LinuxCNCStatusPoller(object):
     def hal_poll_update(self):
         self.pin_dict = {}
         self.sig_dict = {}
+
+        # first, check if linuxcnc is running at all
+        if (not os.path.isfile( '/tmp/linuxcnc.lock' )):
+            self.linuxcnc_is_alive = False
+            return;
         
         p = subprocess.Popen( ['halcmd', '-s', 'show', 'pin'] , stderr=subprocess.PIPE, stdout=subprocess.PIPE )
         raw_data = p.communicate()
@@ -1105,6 +1111,7 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
     def open(self,arg):
         global LINUXCNCSTATUS
         self.isclosed = False
+        self.stream.socket.setsockopt( socket.IPPROTO_TCP, socket.TCP_NODELAY, 1 )
 
     def allow_draft76(self):
         return True    
@@ -1373,7 +1380,7 @@ def main():
     [INI_FILE_PATH, x] = os.path.split( INI_FILENAME )
 
     logging.basicConfig(filename=os.path.join(application_path,'linuxcnc_webserver.log'),format='%(asctime)sZ pid:%(process)s module:%(module)s %(message)s', level=logging.ERROR)
-
+    
 
     #rpdb2.start_embedded_debugger("password")
 
