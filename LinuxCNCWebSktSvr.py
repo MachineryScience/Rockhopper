@@ -42,7 +42,7 @@ import base64
 #import rpdb2
 import socket
 
-UpdateStatusPollPeriodInMilliSeconds = 100
+UpdateStatusPollPeriodInMilliSeconds = 50
 UpdateHALPollPeriodDivisor = 1
 eps = float(0.000001)
 
@@ -226,23 +226,26 @@ class StatusItem( object ):
  
     # called in on_new_poll to update the current value of a status item
     def get_cur_status_value( self, linuxcnc_status_poller, item_index ):
-        
-        if (not linuxcnc_status_poller.linuxcnc_is_alive and not self.name == 'ini_file_name'):
-            return LinuxCNCServerCommand.REPLY_LINUXCNC_NOT_RUNNING
-        if (self.name.find('halpin_') is 0):
-            cval = linuxcnc_status_poller.pin_dict.get( self.name[7:], LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER ) 
-        elif (self.name.find('halsig_') is 0):
-            cval = linuxcnc_status_poller.sig_dict.get( self.name[7:], LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER )
-        elif (self.name.find('backplot') is 0):
-            cval = self.backplot()
-        elif (self.name == 'ini_file_name'):
-            cval = INI_FILENAME
-        elif (self.name == 'file_content'):
-            cval = self.read_gcode_file(linuxcnc_status_poller.linuxcnc_status.file)
-        elif (self.isarray):
-            cval = (linuxcnc_status_poller.linuxcnc_status.__getattribute__( self.name ))[item_index]
-        else:
-            cval = linuxcnc_status_poller.linuxcnc_status.__getattribute__( self.name )
+        cval = ""
+        try:
+            if (not linuxcnc_status_poller.linuxcnc_is_alive and not self.name == 'ini_file_name'):
+                return LinuxCNCServerCommand.REPLY_LINUXCNC_NOT_RUNNING
+            if (self.name.find('halpin_') is 0):
+                cval = linuxcnc_status_poller.pin_dict.get( self.name[7:], LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER ) 
+            elif (self.name.find('halsig_') is 0):
+                cval = linuxcnc_status_poller.sig_dict.get( self.name[7:], LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER )
+            elif (self.name.find('backplot') is 0):
+                cval = self.backplot()
+            elif (self.name == 'ini_file_name'):
+                cval = INI_FILENAME
+            elif (self.name == 'file_content'):
+                cval = self.read_gcode_file(linuxcnc_status_poller.linuxcnc_status.file)
+            elif (self.isarray):
+                cval = (linuxcnc_status_poller.linuxcnc_status.__getattribute__( self.name ))[item_index]
+            else:
+                cval = linuxcnc_status_poller.linuxcnc_status.__getattribute__( self.name )
+        except:
+            pass
         return cval
 
 tool_table_entry_type = type( linuxcnc.stat().tool_table[0] )
