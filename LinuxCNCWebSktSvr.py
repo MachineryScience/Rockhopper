@@ -41,9 +41,15 @@ import hashlib
 import base64
 #import rpdb2
 import socket
+from datetime import datetime
+import time
+from threading import Thread, Lock
+import fcntl
+import signal
+import select
 
 UpdateStatusPollPeriodInMilliSeconds = 50
-UpdateHALPollPeriodDivisor = 1
+UpdateHALPollPeriodInMilliSeconds = 100
 eps = float(0.000001)
 
 main_loop = tornado.ioloop.IOLoop.instance()
@@ -80,6 +86,8 @@ class LinuxCNCStatusPoller(object):
 
         self.counter = 0
 
+        self.hal_poll_init()
+
     def add_observer(self, callback):
         self.observers.append(callback)
 
@@ -103,47 +111,64 @@ class LinuxCNCStatusPoller(object):
         except:
             self.linuxcnc_is_alive = False
 
-    def hal_poll_update(self):
-        self.pin_dict = {}
-        self.sig_dict = {}
+    def hal_poll_init(self):
 
-        # first, check if linuxcnc is running at all
-        if (not os.path.isfile( '/tmp/linuxcnc.lock' )):
-            self.linuxcnc_is_alive = False
-            return;
-        
-        p = subprocess.Popen( ['halcmd', '-s', 'show', 'pin'] , stderr=subprocess.PIPE, stdout=subprocess.PIPE )
-        raw_data = p.communicate()
-        if (len(raw_data[1]) > 0 and len(raw_data[0]) is 0):
-            # the error channel has data, and the stdout does not, so the linuxcnc system must be down
-            self.linuxcnc_is_alive = False
-            return
-        else:
-            self.linuxcnc_is_alive = True
-            
-        raw = raw_data[0].split( '\n' )
-        pins = [ filter( lambda a: a != '', [x.strip() for x in line.split(' ')] ) for line in raw ]
-        for p in pins:
-            if len(p) > 5:
-                # if there is a signal listed on this pin, make sure
-                # that signal is in our signal dictionary
-                self.sig_dict[ p[6] ] = p[3]
-            if len(p) >= 5:
-                self.pin_dict[ p[4] ] = p[3]
-        # cleanup -- make sure the sub-process has stopped
-        try:
-            p.kill()
-        except:
-            pass
+        # halcmd can take 200ms or more to run, so run poll updates in a thread so as not to slow the server
+        # requests for hal pins and sigs will read the results from the most recent update
+        def hal_poll_thread(self):
+            while (True):
+                # first, check if linuxcnc is running at all
+                if (not os.path.isfile( '/tmp/linuxcnc.lock' )):
+                    self.hal_mutex.acquire()
+                    try:
+                        self.linuxcnc_is_alive = False
+                        self.pin_dict = {}
+                        self.sig_dict = {}
+                    finally:
+                        self.hal_mutex.release()
+                    time.sleep(UpdateHALPollPeriodInMilliSeconds/1000.0)
+                    continue
+                else:
+                    self.linuxcnc_is_alive = True
+
+                self.p = subprocess.Popen( ['halcmd', '-s', 'show', 'pin'] , stderr=subprocess.PIPE, stdout=subprocess.PIPE )
+                rawtuple = self.p.communicate()
+                if ( len(rawtuple[0]) <= 0 ):
+                    time.sleep(UpdateHALPollPeriodInMilliSeconds/1000.0)
+                    continue
+                raw = rawtuple[0].split('\n')
+
+                pins = [ filter( lambda a: a != '', [x.strip() for x in line.split(' ')] ) for line in raw ]
+
+                # UPDATE THE DICTIONARY OF PIN INFO
+                # Acquire the mutex so we don't step on other threads
+                self.hal_mutex.acquire()
+                try:
+                    self.pin_dict = {}
+                    self.sig_dict = {}
+
+                    for p in pins:
+                        if len(p) > 5:
+                            # if there is a signal listed on this pin, make sure
+                            # that signal is in our signal dictionary
+                            self.sig_dict[ p[6] ] = p[3]
+                        if len(p) >= 5:
+                            self.pin_dict[ p[4] ] = p[3]
+                finally:
+                    self.hal_mutex.release()
+                    
+                # before starting the next check, sleep a little so we don't use all the CPU
+                time.sleep(UpdateHALPollPeriodInMilliSeconds/1000.0)
+
+        #Main part of hal_poll_init:
+        # Create a thread for checking the HAL pins and sigs
+        self.hal_mutex = Lock()
+        self.hal_thread = Thread(target = hal_poll_thread, args=(self,))
+        self.hal_thread.start()
+
 
     def poll_update(self):
         global linuxcnc_command
-        # update HAL pins, and also check if linuxcnc is up and running
-        if self.counter > UpdateHALPollPeriodDivisor:
-            self.hal_poll_update()
-            self.counter = 0
-        else:
-            self.counter = self.counter + 1
         
         # update linuxcnc status
         if ( (self.linuxcnc_is_alive is False) or (self.linuxcnc_status is None) ):
@@ -156,7 +181,6 @@ class LinuxCNCStatusPoller(object):
             self.linuxcnc_status = None
             linuxcnc_command = None
             self.linuxcnc_is_alive = False
-
 
         # notify all obervers of new status data poll    
         for observer in self.observers:
@@ -231,9 +255,17 @@ class StatusItem( object ):
             if (not linuxcnc_status_poller.linuxcnc_is_alive and not self.name == 'ini_file_name'):
                 return LinuxCNCServerCommand.REPLY_LINUXCNC_NOT_RUNNING
             if (self.name.find('halpin_') is 0):
-                cval = linuxcnc_status_poller.pin_dict.get( self.name[7:], LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER ) 
+                linuxcnc_status_poller.hal_mutex.acquire()
+                try:
+                    cval = linuxcnc_status_poller.pin_dict.get( self.name[7:], LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER )
+                finally:
+                    linuxcnc_status_poller.hal_mutex.release()
             elif (self.name.find('halsig_') is 0):
-                cval = linuxcnc_status_poller.sig_dict.get( self.name[7:], LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER )
+                linuxcnc_status_poller.hal_mutex.acquire()
+                try:
+                    cval = linuxcnc_status_poller.sig_dict.get( self.name[7:], LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER )
+                finally:
+                    linuxcnc_status_poller.hal_mutex.release()
             elif (self.name.find('backplot') is 0):
                 cval = self.backplot()
             elif (self.name == 'ini_file_name'):
@@ -1421,5 +1453,10 @@ def main():
 
 # auto start if executed from the command line
 if __name__ == "__main__":
-    main()
+    os.setpgrp()
+    try:
+        main()  
+    finally:
+        # kill all forked processes
+        os.killpg(0, signal.SIGKILL)
 
