@@ -69,15 +69,18 @@ class GCodeRender( rs274.glcanon.GlCanonDraw ):
             # Parameter files are persistent accross linuxcnc sessions.  Since this is just a simulation, we don't want
             # the gcode file to actually change the persistent parameters, so we make a temporary copy
             parameter = self.inifile.find("RS274NGC", "PARAMETER_FILE")
-            temp_parameter = os.path.join(self.INI_FILE_PATH, os.path.basename(parameter or "linuxcnc.var"))
-            self.canon.parameter_file = temp_parameter
+            temp_parameter_orig = os.path.join(self.INI_FILE_PATH, os.path.basename(parameter or "linuxcnc.var"))
+            temp_parameter_new = os.path.join( os.getcwd(), "tmp_params.var" )
+            if os.path.exists(parameter):
+                shutil.copy(temp_parameter_orig, temp_parameter_new )
+            self.canon.parameter_file = temp_parameter_new
 
             # Some initialization g-code to set the units and optional user code
             unitcode = "G%d" % (20 + (s.linear_units == 1))
             initcode = self.inifile.find("RS274NGC", "RS274NGC_STARTUP_CODE") or ""
 
             # THIS IS WHERE IT ALL HAPPENS: load_preview will execute the code, call back to the canon with motion commands, and
-            # record a history of all the movements.  We can then 
+            # record a history of all the movements.   
             result, seq = self.load_preview(filename, self.canon, unitcode, initcode)
 	    if result > gcode.MIN_ERROR:
 		self.report_gcode_error(result, seq, filename)
@@ -92,7 +95,7 @@ class GCodeRender( rs274.glcanon.GlCanonDraw ):
         finally:
             f.close()
 
-    def to_json( self, compact=True, fixed_point_precision=5 ):
+    def to_json( self, compact=True, fixed_point_precision=5, maxlines=-1 ):
         # each item is:
         # 1) Line number (the line number in the gcode that generated this movement
         # 2) a tuple of coordinates: the line start location
@@ -102,31 +105,52 @@ class GCodeRender( rs274.glcanon.GlCanonDraw ):
         obj = {}
 
         mult = pow(10,fixed_point_precision)
+        linecount = 0
         
         # reduce size by limiting to 3 axes, and 4 digits of precision
         if (compact):
-            obj['traverse'] = []
-            for item in self.canon.traverse:
-                obj['traverse'].append( [ item[0], [ int(round(mult*item[1][0])), int(round(mult*item[1][1])), int(round(mult*item[1][2])) ], [ int(round(mult*item[2][0])), int(round(mult*item[2][1])), int(round(mult*item[2][2])) ], item[3] ] )
-
             obj['feed'] = []
             for item in self.canon.feed:
+                if (maxlines > 0 and linecount >= maxlines):
+                    break
                 obj['feed'].append( [ item[0], [ int(round(mult*item[1][0])), int(round(mult*item[1][1])), int(round(mult*item[1][2])) ], [ int(round(mult*item[2][0])), int(round(mult*item[2][1])), int(round(mult*item[2][2])) ], int(round(mult*item[3])), item[4] ] )
-
+                linecount = linecount + 1
+                
             obj['arcfeed'] = []
             for item in self.canon.arcfeed:
+                if (maxlines > 0 and linecount >= maxlines):
+                    break
                 obj['arcfeed'].append( [ item[0], [ int(round(mult*item[1][0])), int(round(mult*item[1][1])), int(round(mult*item[1][2])) ], [ int(round(mult*item[2][0])), int(round(mult*item[2][1])), int(round(mult*item[2][2])) ], int(round(mult*item[3])), item[4] ] )
+                linecount = linecount + 1
 
-        else:
             obj['traverse'] = []
             for item in self.canon.traverse:
-                obj['traverse'].append( [ item[0], item[1], item[2], item[3] ] )
+                if (maxlines > 0 and linecount >= maxlines):
+                    break
+                obj['traverse'].append( [ item[0], [ int(round(mult*item[1][0])), int(round(mult*item[1][1])), int(round(mult*item[1][2])) ], [ int(round(mult*item[2][0])), int(round(mult*item[2][1])), int(round(mult*item[2][2])) ], item[3] ] )
+                linecount = linecount + 1                
+
+        else:
             obj['feed'] = []    
             for item in self.canon.feed:
+                if (maxlines > 0 and linecount >= maxlines):
+                    break
                 obj['feed'].append( [ item[0], item[1], item[2], item[3] ] )
+                linecount = linecount + 1
+                
             obj['arcfeed'] = []    
             for item in self.canon.arcfeed:
+                if (maxlines > 0 and linecount >= maxlines):
+                    break
                 obj['arcfeed'].append( [ item[0], item[1], item[2], item[3] ] )
+                linecount = linecount + 1
+                
+            obj['traverse'] = []
+            for item in self.canon.traverse:
+                if (maxlines > 0 and linecount >= maxlines):
+                    break
+                obj['traverse'].append( [ item[0], item[1], item[2], item[3] ] )
+                linecount = linecount + 1                
 
         
         string = json.dumps( obj, separators=(',', ':') )

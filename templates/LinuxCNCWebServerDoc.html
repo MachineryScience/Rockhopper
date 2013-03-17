@@ -113,6 +113,8 @@ system, the following packages must be installed:<br>
 </ul>
 &nbsp;<br>
 <div class="DocHeading2">Launching</div>
+Change to the directory in which the server files are located, and type:<br />
+<span class="DocQuote">python ./LinuxCNCWebSktSvr.py [<i>full path and name of LinuxCNC ini file</i>]</span>
 
 <div class="DocHeading1">Programming</div>
 
@@ -324,32 +326,7 @@ Additional parameters may also be returned.  In particular, <span class="DocComm
 
 
 <div class="DocCommandDef">
-<span class="DocCommand">keepalive</span>
-<br>
-Send a notification to linuxcnc that the remote client is still running.
-<br>
-<br>
-<div class="DocHeading3">Parameters:</div>
-None.
-<br>
-<div class="DocHeading3">Return Values:</div>
-<span class="DocParam">data</span>: Contains a copy of the return code (e.g., "?OK")<br>
-<span class="DocParam">elapsed_time</span>: Time since last keepalive was sent<br>
-<span class="DocParam">counter</span>: Number of keepalives received since startup<br>
-<br>
-<div class="DocHeading3">Example:</div>
-<span class="DocQuote"><br>
-    =&gt; { "id": "my-id", "command":"keepalive" }<br>
-</span><span class="DocQuote">
-{"elapsed_time": 7.6190829277038574, "code": "?OK", "data": "?OK", "id": "my-id", "counter": 1}
-</span><br
-    class="DocQuote">
-<br>
-</div>
-
-
-<div class="DocCommandDef">
-<span class="DocCommand">halgraph</span>
+<span class="DocCommand">get halgraph</span>
 <br>
 Generate a graph of the currently running HAL configuration.
 <br>
@@ -358,14 +335,13 @@ Generate a graph of the currently running HAL configuration.
 None.
 <br>
 <div class="DocHeading3">Return Values:</div>
-<span class="DocParam">data</span>: Contains a copy of the return code (e.g., "?OK")<br>
-<span class="DocParam">link</span>: A path to the .svg file containing the HAL graph.<br>
+<span class="DocParam">data</span>: A path to the .svg file containing the HAL graph.<br>
 <br>
 <div class="DocHeading3">Example:</div>
 <span class="DocQuote"><br>
-    =&gt; { "id": "my-id", "command":"halgraph" }<br>
+    =&gt; { "id": "my-id", "command":"get", "name":"halgraph" }<br>
 </span><span class="DocQuote">
-{"data": "?OK", "code": "?OK", "link": "static/halgraph.svg", "id": "my-id"}
+{"data": "?OK", "code": "?OK", "data": "static/halgraph.svg", "id": "my-id"}
 </span><br
     class="DocQuote">
 <br>
@@ -373,7 +349,7 @@ None.
 
 
 <div class="DocCommandDef">
-<span class="DocCommand">get_config</span>
+<span class="DocCommand">get config</span>
 <br>
 Return a listing of the .INI file for linuxcnc.
 <br>
@@ -382,10 +358,9 @@ Return a listing of the .INI file for linuxcnc.
 None.
 <br>
 <div class="DocHeading3">Return Values:</div>
-<span class="DocParam">data</span>: Contains a copy of the return code (e.g., "?OK")<br>
-<span class="DocParam">config_data</span>: contains the INI file data.  Has sub-elements:
+<span class="DocParam">data</span>: contains the INI file data.  Has sub-elements:
 <ul>
-    <li><span class="DocParam">data</span>: An array of values.  Each element of the array contains:
+    <li><span class="DocParam">parameters</span>: An array of values.  Each element of the array contains:
         <ul>
             <li><span class="DocParam">values</span>: Contains information on a single key-value pair.
                 <ul>
@@ -408,28 +383,28 @@ None.
 </ul>
 <div class="DocHeading3">Example:</div>
 <span class="DocQuote"><br>
-    =&gt; { "id": "my-id", "command":"get_config" }<br>
+    =&gt; { "id": "my-id", "command":"get", "name":"config" }<br>
 </span><span class="DocQuote">
-{"config_data": {"data": [{"values": {"comment": "", "name": "BACKLASH", "default": "0.0000", "section": "AXIS_0", "value": "0.000", "help": "Backlash in machine units. Backlash compensation value can be used to make up for small deficiencies in the hardware used to drive an axis. If backlash is added to an axis and you are using steppers the STEPGEN_MAXACCEL must be increased to 1.5 to 2 times the MAX_ACCELERATION for the axis. "}, "id": 1}, {"values": {"comment": "", "name": "FERROR", "default": "1.0", "section": "AXIS_0", "value": "0.050", "help": "FERROR is the maximum allowable following error, ...
+{"code": "?OK", "data": {"sections": {"TASK": {"comment": " Task controller section -----------------------------------------------------\n", "help": ""}, "HAL": {"comment": " Hardware Abstraction Layer section --------------------------------------------------\n", "help": ""}, "EMC": {"comment": " EMC controller parameters for a simulated machine.\n General note: Comments can either be preceded with a # or ; - either is\n acceptable, although # is in keeping with most linux config files.\n General section -------------------------------------------------------------\ ...
 </span>
 </div>
 
 
 <div class="DocCommandDef">
-<span class="DocCommand">put_config</span>
+<span class="DocCommand">put config</span>
 <br>
 Write the INI file.
 <br>
 <br>
 <div class="DocHeading3">Parameters:</div>
 
-<span class="DocParam">config_data</span>: Data to write to the INI file.  See get_config for the format.<br>
+<span class="DocParam">config_data</span>: Data to write to the INI file.  See "get config" for the format.<br>
 <br>
 <div class="DocHeading3">Return Values:</div>
 None.
 <div class="DocHeading3">Example:</div>
 <span class="DocQuote"><br>
-    =&gt; { "id": "my-id", "command":"put_config", "config_data":... }<br>
+    =&gt; { "id": "my-id", "command":"put", "name":"config", "data":... }<br>
 </span><span class="DocQuote">
 </span>
 </div>
@@ -437,22 +412,22 @@ None.
 
 
 <div class="DocCommandDef">
-<span class="DocCommand">get_config_item</span>
+<span class="DocCommand">get config_item</span>
 <br>
 Returns a single item from the config file
 <br>
 <br>
 <div class="DocHeading3">Parameters:</div>
 <span class="DocParam">section</span>: The section in the INI file to read from<br>
-<span class="DocParam">name</span>: The name or key of the item desired.<br>
+<span class="DocParam">parameter</span>: The name or key of the item desired.<br>
 <br>
 <div class="DocHeading3">Return Values:</div>
-See <span class="DocCommand">get_config</span> command.
+See <span class="DocCommand">get config</span> command.
 <div class="DocHeading3">Example:</div>
 <span class="DocQuote"><br>
-    =&gt; { "id": "my-id", "command":"get_config_item", "section":"EMCMOT", "name":"SERVO_PERIOD" }<br>
+    =&gt; { "id": "my-id", "command":"get", "name":"config_item", "section":"EMCMOT", "parameter":"SERVO_PERIOD" }<br>
 </span><span class="DocQuote">
-{"config_data": {"data": [{"values": {"comment": " Servo task period, in nano-seconds\n", "name": "SERVO_PERIOD", "default": "1000000", "section": "EMCMOT", "value": "1000000", "help": "This is the \"Servo\" task period in nanoseconds. "}, "id": 82}], "sections": {"EMCMOT": {"comment": " Motion control section ------------------------------------------------------\n", "help": "This section is a custom section and is not used by LinuxCNC directly. Most configurations use values from this section to load the motion controller."}}}, "code": "?OK", "data": "?OK", "id": "my-id"}
+{"code": "?OK", "data": {"sections": {"EMCMOT": {"comment": " Motion control section ------------------------------------------------------\n", "help": "This section is a custom section and is not used by LinuxCNC directly. Most configurations use values from this section to load the motion controller."}}, "parameters": [{"values": {"comment": " Servo task period, in nano-seconds\n", "name": "SERVO_PERIOD", "default": "1000000", "section": "EMCMOT", "value": "1000000", "help": "This is the \"Servo\" task period in nanoseconds. "}, "id": 81}]}, "id": "my-id"}
 </span>
 </div>
 
@@ -460,7 +435,7 @@ See <span class="DocCommand">get_config</span> command.
 
 
 <div class="DocCommandDef">
-<span class="DocCommand">get_hal_file</span>
+<span class="DocCommand">get hal_file</span>
 <br>
 Reads a specified HAL file and returns it's contents.
 <br>
@@ -469,36 +444,15 @@ Reads a specified HAL file and returns it's contents.
 <span class="DocParam">filename</span>: The filename of the HAL file, as specified in the INI file, HAL section.<br>
 <br>
 <div class="DocHeading3">Return Values:</div>
-<span class="DocParam">hal_data</span>: A string containing the HAL file contents.
+<span class="DocParam">data</span>: A string containing the HAL file contents.
 <div class="DocHeading3">Example:</div>
 <span class="DocQuote"><br>
-    =&gt; { "id": "my-id", "command":"get_hal_file", "filename":"core_sim.hal" }<br>
+    =&gt; { "id": "my-id", "command":"get", "name":"hal_file", "filename":"core_sim.hal" }<br>
 </span><span class="DocQuote">
-{"hal_data": "# core HAL config file for simulation\n \n# first load all the RT modules that will be needed\n# kinematics\nloadrt trivkins\n# motion controller, get name and thread periods from ini file\nloadrt [EMCMOT]EMCMOT base_period_nsec=[EMCMOT]BASE_PERIOD servo_period_nsec=[EMCMOT]SERVO_PERIOD num_joints=[TRAJ]AXES\n# load 6 differentiators (for velocity and accel signals\nloadrt ddt count=6\n# load additional blocks\nloadrt hypot count=2\nloadrt comp count=3\nloadrt or2 count=1\n\n# add motion controller functions to servo thread\naddf motion-command-handler
+{"data": "# core HAL config file for simulation\n \n# first load all the RT modules that will be needed\n# kinematics\nloadrt trivkins\n# motion controller, get name and thread periods from ini file\nloadrt [EMCMOT]EMCMOT base_period_nsec=[EMCMOT]BASE_PERIOD servo_period_nsec=[EMCMOT]SERVO_PERIOD num_joints=[TRAJ]AXES\n# load 6 differentiators (for velocity and accel signals\nloadrt ddt count=6\n# load additional blocks\nloadrt hypot count=2\nloadrt comp count=3\nloadrt or2 count=1\n\n# add motion controller functions to servo thread\naddf motion-command-handler
 </span>
 </div>
 
-
-
-
-<div class="DocCommandDef">
-<span class="DocCommand">put_hal_file</span>
-<br>
-Writes a specified HAL file in it's entirety.
-<br>
-<br>
-<div class="DocHeading3">Parameters:</div>
-<span class="DocParam">filename</span>: The filename of the HAL file, as specified in the INI file, HAL section.<br>
-<span class="DocParam">hal_data</span>: A string containing the complete HAL file<br>
-<br>
-<div class="DocHeading3">Return Values:</div>
-None
-<div class="DocHeading3">Example:</div>
-<span class="DocQuote"><br>
-    =&gt; { "id": "my-id", "command":"put_hal_file", "filename":"core_sim.hal", "hal_data":"..." }<br>
-</span><span class="DocQuote">
-</span>
-</div>
 
 
 {% end %}

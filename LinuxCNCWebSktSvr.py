@@ -47,6 +47,8 @@ from threading import Thread, Lock
 import fcntl
 import signal
 import select
+import glob
+from random import random
 
 UpdateStatusPollPeriodInMilliSeconds = 50
 UpdateHALPollPeriodInMilliSeconds = 100
@@ -58,6 +60,10 @@ linuxcnc_command = linuxcnc.command()
 
 INI_FILENAME = ''
 INI_FILE_PATH = ''
+
+MAX_BACKPLOT_LINES=50000
+
+instance_number = 0
 
 # *****************************************************
 # Class to poll linuxcnc for status.  Other classes can request to be notified
@@ -116,7 +122,10 @@ class LinuxCNCStatusPoller(object):
         # halcmd can take 200ms or more to run, so run poll updates in a thread so as not to slow the server
         # requests for hal pins and sigs will read the results from the most recent update
         def hal_poll_thread(self):
-            while (True):
+            global instance_number
+            myinstance = instance_number
+            while (myinstance == instance_number):
+                
                 # first, check if linuxcnc is running at all
                 if (not os.path.isfile( '/tmp/linuxcnc.lock' )):
                     self.hal_mutex.acquire()
@@ -202,12 +211,14 @@ LINUXCNCSTATUS = LinuxCNCStatusPoller(main_loop, UpdateStatusPollPeriodInMilliSe
 # *****************************************************
 class StatusItem( object ):
 
-    def __init__( self, name=None, valtype='', help='', isarray=False, arraylen=0 ):
+    def __init__( self, name=None, valtype='', help='', watchable=True, isarray=False, arraylen=0, requiresLinuxCNCUp=True ):
         self.name = name
         self.valtype = valtype
         self.help = help
         self.isarray = isarray
         self.arraylength = arraylen
+        self.watchable = watchable
+        self.requiresLinuxCNCUp = requiresLinuxCNCUp
 
     @staticmethod
     def from_name( name ):
@@ -219,10 +230,6 @@ class StatusItem( object ):
             return StatusItem( name=name, valtype='halpin', help='HAL pin.', isarray=False )
         elif name.find('halsig_') is 0:
             return StatusItem( name=name, valtype='halsig', help='HAL signal.', isarray=False )
-        elif name.find('backplot') is 0:
-            return StatusItem( name=name, valtype='backplot', help='Backplot information.  Potentially very large list of lines.', isarray=False )
-        elif name.find('ini_file_name') is 0:
-            return StatusItem( name=name, valtype='sys', help='INI file to use for next LinuxCNC start.', isarray=False )
         return None
 
     # puts this object into the dictionary, with the key == self.name
@@ -233,10 +240,10 @@ class StatusItem( object ):
         return self.__dict__
 
     def backplot( self ):
+        global MAX_BACKPLOT_LINES
         gr = GCodeReader.GCodeRender( INI_FILENAME )
         gr.load()
-        return gr.to_json()  
-
+        return gr.to_json(maxlines=MAX_BACKPLOT_LINES)  
 
     def read_gcode_file( self, filename ):
         try:
@@ -247,38 +254,196 @@ class StatusItem( object ):
         finally:
             f.close()
         return ret
- 
-    # called in on_new_poll to update the current value of a status item
-    def get_cur_status_value( self, linuxcnc_status_poller, item_index ):
-        cval = ""
+
+    @staticmethod
+    def get_ini_data_item(section, item_name):
         try:
-            if (not linuxcnc_status_poller.linuxcnc_is_alive and not self.name == 'ini_file_name'):
-                return LinuxCNCServerCommand.REPLY_LINUXCNC_NOT_RUNNING
+            reply = StatusItem.get_ini_data( only_section=section.strip(), only_name=item_name.strip() )
+        except Exception as ex:
+            reply = {'code':LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND,'data':''}
+        return reply        
+
+    # called in a "get_config" command to read the config file and output it's values
+    @staticmethod
+    def get_ini_data( only_section=None, only_name=None ):
+        global INIFileDataTemplate
+        global INI_FILENAME
+        global INI_FILE_PATH         
+        INIFileData = deepcopy(INIFileDataTemplate)
+       
+        sectionRegEx = re.compile( r"^\s*\[\s*(.+?)\s*\]" )
+        keyValRegEx = re.compile( r"^\s*(.+?)\s*=\s*(.+?)\s*$" )
+        try:
+            section = 'NONE'
+            comments = ''
+            idv = 1
+            with open( INI_FILENAME ) as file_:
+                for line in file_:
+                    if  line.lstrip().find('#') == 0 or line.lstrip().find(';') == 0:
+                        comments = comments + line[1:]
+                    else:
+                        mo = sectionRegEx.search( line )
+                        if mo:
+                            section = mo.group(1)
+                            hlp = ''
+                            try:
+                                if (section in ConfigHelp):
+                                    hlp = ConfigHelp[section]['']['help'].encode('ascii','replace')
+                            except:
+                                pass
+                            if (only_section is None or only_section == section):
+                                INIFileData['sections'][section] = { 'comment':comments, 'help':hlp }
+                            comments = '' 
+                        else:
+                            mo = keyValRegEx.search( line )
+                            if mo:
+                                hlp = ''
+                                default = ''
+                                try:
+                                    if (section in ConfigHelp):
+                                        if (mo.group(1) in ConfigHelp[section]):
+                                            hlp = ConfigHelp[section][mo.group(1)]['help'].encode('ascii','replace')
+                                            default = ConfigHelp[section][mo.group(1)]['default'].encode('ascii','replace')
+                                except:
+                                    pass
+
+                                if (only_section is None or (only_section == section and only_name == mo.group(1) )):
+                                    INIFileData['parameters'].append( { 'id':idv, 'values':{ 'section':section, 'name':mo.group(1), 'value':mo.group(2), 'comment':comments, 'help':hlp, 'default':default } } )
+                                comments = ''
+                                idv = idv + 1
+            reply = {'data':INIFileData,'code':LinuxCNCServerCommand.REPLY_COMMAND_OK}
+        except Exception as ex:
+            reply = {'code':LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND,'data':''}
+
+        return reply
+
+    @staticmethod
+    def check_hal_file_listed_in_ini( filename ):
+        # check this is a valid hal file name
+        f = filename
+        found = False
+        halfiles = StatusItem.get_ini_data( only_section='HAL', only_name='HALFILE' )
+        halfiles = halfiles['data']['parameters']
+        for v in halfiles:
+            if (v['values']['value'] == f):
+                found = True
+                break
+        if not found:
+            halfiles = StatusItem.get_ini_data( only_section='HAL', only_name='POSTGUI_HALFILE' )
+            halfiles = halfiles['data']['parameters']
+            for v in halfiles:
+                if (v['values']['value'] == f):
+                    found = True
+                    break
+        return found
+
+    def get_hal_file( self, filename ): 
+        global INI_FILENAME
+        global INI_FILE_PATH        
+        try:
+
+            reply = { 'code': LinuxCNCServerCommand.REPLY_COMMAND_OK }
+            # strip off just the filename, if a path was given
+            # we will only look in the config directory, so we ignore path
+            [h,f] = os.path.split( filename )
+            if not StatusItem.check_hal_file_listed_in_ini( f ):
+                reply['code']= LinuxCNCServerCommand.REPLY_ERROR_INVALID_PARAMETER
+                return reply
+
+            reply['data'] = ''
+
+            try:
+                fo = open( os.path.join( INI_FILE_PATH, f ), 'r' )
+                reply['data'] = fo.read()
+            except:
+                reply['data'] = ''
+            finally:
+                try:
+                    fo.close()
+                except:
+                    pass
+            
+        except Exception as ex:
+            reply['data'] = ''
+            reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
+
+        return reply
+
+    def list_gcode_files( self, directory ):
+        file_list = []
+        code = LinuxCNCServerCommand.REPLY_COMMAND_OK
+        try:
+            if directory is None:
+                directory = "."
+                dirs = StatusITem.get_ini_data( only_section='DISPLAY', only_name='PROGRAM_PREFIX' )
+                directory = dirs['data'][0]['values']['value']
+        except:
+            pass
+        try:
+            file_list = glob.glob(  os.path.join(directory,'*.ngc') )
+        except:
+            code = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
+        return { "code":code, "data":file_list, "directory":directory }
+
+    def get_halgraph( self ):
+        ret = { "code":LinuxCNCServerCommand.REPLY_COMMAND_OK, "data":"" }
+        try:
+            analyzer = MakeHALGraph.HALAnalyzer()
+            analyzer.parse_pins()
+            analyzer.write_svg( os.path.join(application_path,"static/halgraph.svg") )
+            ret['data'] = 'static/halgraph.svg'
+        except:        
+            ret['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
+            ret['data'] = ''
+        return ret
+
+
+    # called in on_new_poll to update the current value of a status item
+    def get_cur_status_value( self, linuxcnc_status_poller, item_index, command_dict ):
+        ret = { "code":LinuxCNCServerCommand.REPLY_COMMAND_OK, "data":"" } 
+        try:
+            if (not linuxcnc_status_poller.linuxcnc_is_alive and self.requiresLinuxCNCUp ):
+                return 
             if (self.name.find('halpin_') is 0):
                 linuxcnc_status_poller.hal_mutex.acquire()
                 try:
-                    cval = linuxcnc_status_poller.pin_dict.get( self.name[7:], LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER )
+                    ret['data'] = linuxcnc_status_poller.pin_dict.get( self.name[7:], LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER )
+                    if ( ret['data'] == LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER ):
+                        ret['code'] = ret['data']
                 finally:
                     linuxcnc_status_poller.hal_mutex.release()
             elif (self.name.find('halsig_') is 0):
                 linuxcnc_status_poller.hal_mutex.acquire()
                 try:
-                    cval = linuxcnc_status_poller.sig_dict.get( self.name[7:], LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER )
+                    ret['data'] = linuxcnc_status_poller.sig_dict.get( self.name[7:], LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER )
+                    if ( ret['data'] == LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER ):
+                        ret['code'] = ret['data']
                 finally:
                     linuxcnc_status_poller.hal_mutex.release()
             elif (self.name.find('backplot') is 0):
-                cval = self.backplot()
+                ret['data'] = self.backplot()
             elif (self.name == 'ini_file_name'):
-                cval = INI_FILENAME
+                ret['data'] = INI_FILENAME
             elif (self.name == 'file_content'):
-                cval = self.read_gcode_file(linuxcnc_status_poller.linuxcnc_status.file)
+                ret['data'] = self.read_gcode_file(linuxcnc_status_poller.linuxcnc_status.file)
+            elif (self.name == 'ls'):
+                ret = self.list_gcode_files( command_dict.get("directory", None) )
+            elif (self.name == 'halgraph'):
+                ret = self.get_halgraph()
+            elif (self.name == 'config'):
+                ret = StatusItem.get_ini_data()
+            elif (self.name == 'config_item'):
+                ret = StatusItem.get_ini_data_item(command_dict.get("section", ''),command_dict.get("parameter", ''))
+            elif (self.name == 'halfile'):
+                ret = self.get_hal_file( command_dict.get("filename", '') )
             elif (self.isarray):
-                cval = (linuxcnc_status_poller.linuxcnc_status.__getattribute__( self.name ))[item_index]
+                ret['data'] = (linuxcnc_status_poller.linuxcnc_status.__getattribute__( self.name ))[item_index]
             else:
-                cval = linuxcnc_status_poller.linuxcnc_status.__getattribute__( self.name )
+                ret['data'] = linuxcnc_status_poller.linuxcnc_status.__getattribute__( self.name )
         except:
-            pass
-        return cval
+            ret['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
+            ret['data'] = ''
+        return ret
 
 tool_table_entry_type = type( linuxcnc.stat().tool_table[0] )
 tool_table_length = len(linuxcnc.stat().tool_table)
@@ -300,92 +465,100 @@ class StatusItemEncoder(json.JSONEncoder):
 # Global list of possible status items from linuxcnc
 # *****************************************************
 StatusItems = {}
-StatusItem( name='acceleration',             valtype='float',   help='Default acceleration.  Reflects INI file value [TRAJ]DEFAULT_ACCELERATION' ).register_in_dict( StatusItems )
-StatusItem( name='active_queue',             valtype='int'  ,   help='Number of motions blending' ).register_in_dict( StatusItems )
-StatusItem( name='actual_position',          valtype='float[]', help='Current trajectory position. Array of floats: (x y z a b c u v w). In machine units.' ).register_in_dict( StatusItems )
-StatusItem( name='adaptive_feed_enabled',    valtype='int',     help='status of adaptive feedrate override' ).register_in_dict( StatusItems )
-StatusItem( name='ain',                      valtype='float[]', help='current value of the analog input pins' ).register_in_dict( StatusItems )
-StatusItem( name='angular_units',            valtype='string' , help='From [TRAJ]ANGULAR_UNITS ini value' ).register_in_dict( StatusItems )
-StatusItem( name='aout',                     valtype='float[]', help='Current value of the analog output pins' ).register_in_dict( StatusItems )
-StatusItem( name='axes',                     valtype='int' ,    help='From [TRAJ]AXES ini value' ).register_in_dict( StatusItems )
-StatusItem( name='axis_mask',                valtype='int' ,    help='Mask of axis available. X=1, Y=2, Z=4 etc.' ).register_in_dict( StatusItems )
-StatusItem( name='block_delete',             valtype='bool' ,   help='Block delete currently on/off' ).register_in_dict( StatusItems )
-StatusItem( name='command',                  valtype='string' , help='Currently executing command' ).register_in_dict( StatusItems )
-StatusItem( name='current_line',             valtype='int' ,    help='Currently executing line' ).register_in_dict( StatusItems )
-StatusItem( name='current_vel',              valtype='float' ,  help='Current velocity in cartesian space' ).register_in_dict( StatusItems )
-StatusItem( name='cycle_time',               valtype='float' ,  help='From [TRAJ]CYCLE_TIME ini value' ).register_in_dict( StatusItems )
-StatusItem( name='debug',                    valtype='int' ,    help='Debug flag' ).register_in_dict( StatusItems )
-StatusItem( name='delay_left',               valtype='float' ,  help='remaining time on dwell (G4) command, seconds' ).register_in_dict( StatusItems )
-StatusItem( name='din',                      valtype='int[]' ,  help='current value of the digital input pins' ).register_in_dict( StatusItems )
-StatusItem( name='distance_to_go',           valtype='float' ,  help='remaining distance of current move, as reported by trajectory planner, in cartesian space' ).register_in_dict( StatusItems )
-StatusItem( name='dout',                     valtype='int[]' ,  help='current value of the digital output pins' ).register_in_dict( StatusItems )
-StatusItem( name='dtg',                      valtype='float[]', help='remaining distance of current move, as reported by trajectory planner, as a pose (tuple of 9 floats). ' ).register_in_dict( StatusItems )
-StatusItem( name='echo_serial_number',       valtype='int' ,    help='The serial number of the last completed command sent by a UI to task. All commands carry a serial number. Once the command has been executed, its serial number is reflected in echo_serial_number' ).register_in_dict( StatusItems )
-StatusItem( name='enabled',                  valtype='int' ,    help='trajectory planner enabled flag' ).register_in_dict( StatusItems )
-StatusItem( name='estop',                    valtype='int' ,    help='estop flag' ).register_in_dict( StatusItems )
-StatusItem( name='exec_state',               valtype='int' ,    help='Task execution state.  EMC_TASK_EXEC_ERROR = 1, EMC_TASK_EXEC_DONE = 2, EMC_TASK_EXEC_WAITING_FOR_MOTION = 3, EMC_TASK_EXEC_WAITING_FOR_MOTION_QUEUE = 4,EMC_TASK_EXEC_WAITING_FOR_IO = 5, EMC_TASK_EXEC_WAITING_FOR_MOTION_AND_IO = 7,EMC_TASK_EXEC_WAITING_FOR_DELAY = 8, EMC_TASK_EXEC_WAITING_FOR_SYSTEM_CMD = 9, EMC_TASK_EXEC_WAITING_FOR_SPINDLE_ORIENTED = 10' ).register_in_dict( StatusItems )
-StatusItem( name='feed_hold_enabled',        valtype='int' ,    help='enable flag for feed hold' ).register_in_dict( StatusItems )
-StatusItem( name='feed_override_enabled',    valtype='int' ,    help='enable flag for feed override' ).register_in_dict( StatusItems )
-StatusItem( name='feedrate',                 valtype='float' ,  help='current feedrate' ).register_in_dict( StatusItems )
-StatusItem( name='file',                     valtype='string' , help='currently executing gcode file' ).register_in_dict( StatusItems )
-StatusItem( name='file_content',             valtype='string' , help='currently executing gcode file contents' ).register_in_dict( StatusItems )
-StatusItem( name='flood',                    valtype='int' ,    help='flood enabled' ).register_in_dict( StatusItems )
-StatusItem( name='g5x_index',                valtype='int' ,    help='currently active coordinate system, G54=0, G55=1 etc.' ).register_in_dict( StatusItems )
-StatusItem( name='g5x_offset',               valtype='float[]', help='offset of the currently active coordinate system, a pose' ).register_in_dict( StatusItems )
-StatusItem( name='g92_offset',               valtype='float[]', help='pose of the current g92 offset' ).register_in_dict( StatusItems )
-StatusItem( name='gcodes',                   valtype='int[]' ,  help='currently active G-codes. Tuple of 16 ints.' ).register_in_dict( StatusItems )
-StatusItem( name='homed',                    valtype='int' ,    help='flag for homed state' ).register_in_dict( StatusItems )
-StatusItem( name='id',                       valtype='int' ,    help='currently executing motion id' ).register_in_dict( StatusItems )
-StatusItem( name='inpos',                    valtype='int' ,    help='machine-in-position flag' ).register_in_dict( StatusItems )
-StatusItem( name='input_timeout',            valtype='int' ,    help='flag for M66 timer in progress' ).register_in_dict( StatusItems )
-StatusItem( name='interp_state',             valtype='int' ,    help='Current state of RS274NGC interpreter.  EMC_TASK_INTERP_IDLE = 1,EMC_TASK_INTERP_READING = 2,EMC_TASK_INTERP_PAUSED = 3,EMC_TASK_INTERP_WAITING = 4' ).register_in_dict( StatusItems )
-StatusItem( name='interpreter_errcode',      valtype='int' ,    help='Current RS274NGC interpreter return code. INTERP_OK=0, INTERP_EXIT=1, INTERP_EXECUTE_FINISH=2, INTERP_ENDFILE=3, INTERP_FILE_NOT_OPEN=4, INTERP_ERROR=5' ).register_in_dict( StatusItems )
-StatusItem( name='joint_actual_position',    valtype='float[]' ,help='Actual joint positions' ).register_in_dict( StatusItems )
-StatusItem( name='joint_position',           valtype='float[]', help='Desired joint positions' ).register_in_dict( StatusItems )
-StatusItem( name='kinematics_type',          valtype='int' ,    help='identity=1, serial=2, parallel=3, custom=4 ' ).register_in_dict( StatusItems )
-StatusItem( name='limit',                    valtype='int[]' ,  help='Tuple of axis limit masks. minHardLimit=1, maxHardLimit=2, minSoftLimit=4, maxSoftLimit=8' ).register_in_dict( StatusItems )
-StatusItem( name='linear_units',             valtype='int' ,    help='reflects [TRAJ]LINEAR_UNITS ini value' ).register_in_dict( StatusItems )
-StatusItem( name='lube',                     valtype='int' ,    help='lube on flag' ).register_in_dict( StatusItems )
-StatusItem( name='lube_level',               valtype='int' ,    help='reflects iocontrol.0.lube_level' ).register_in_dict( StatusItems )
-StatusItem( name='max_acceleration',         valtype='float' ,  help='Maximum acceleration. reflects [TRAJ]MAX_ACCELERATION ' ).register_in_dict( StatusItems )
-StatusItem( name='max_velocity',             valtype='float' ,  help='Maximum velocity, float. reflects [TRAJ]MAX_VELOCITY.' ).register_in_dict( StatusItems )
-StatusItem( name='mcodes',                   valtype='int[]' ,  help='currently active M-codes. tuple of 10 ints.' ).register_in_dict( StatusItems )
-StatusItem( name='mist',                     valtype='int' ,    help='mist on flag' ).register_in_dict( StatusItems )
-StatusItem( name='motion_line',              valtype='int' ,    help='source line number motion is currently executing' ).register_in_dict( StatusItems )
-StatusItem( name='motion_mode',              valtype='int' ,    help='motion mode' ).register_in_dict( StatusItems )
-StatusItem( name='motion_type',              valtype='int' ,    help='Trajectory planner mode. EMC_TRAJ_MODE_FREE = 1 = independent-axis motion, EMC_TRAJ_MODE_COORD = 2 coordinated-axis motion, EMC_TRAJ_MODE_TELEOP = 3 = velocity based world coordinates motion' ).register_in_dict( StatusItems )
-StatusItem( name='optional_stop',            valtype='int' ,    help='option stop flag' ).register_in_dict( StatusItems )
-StatusItem( name='paused',                   valtype='int' ,    help='motion paused flag' ).register_in_dict( StatusItems )
-StatusItem( name='pocket_prepped',           valtype='int' ,    help='A Tx command completed, and this pocket is prepared. -1 if no prepared pocket' ).register_in_dict( StatusItems )
-StatusItem( name='position',                 valtype='float[]', help='Trajectory position, a pose.' ).register_in_dict( StatusItems )
-StatusItem( name='probe_tripped',            valtype='int' ,    help='Flag, true if probe has tripped (latch)' ).register_in_dict( StatusItems )
-StatusItem( name='probe_val',                valtype='int' ,    help='reflects value of the motion.probe-input pin' ).register_in_dict( StatusItems )
-StatusItem( name='probed_position',          valtype='float[]', help='position where probe tripped' ).register_in_dict( StatusItems )
-StatusItem( name='probing',                  valtype='int' ,    help='flag, true if a probe operation is in progress' ).register_in_dict( StatusItems )
-StatusItem( name='program_units',            valtype='int' ,    help='one of CANON_UNITS_INCHES=1, CANON_UNITS_MM=2, CANON_UNITS_CM=3' ).register_in_dict( StatusItems )
-StatusItem( name='queue',                    valtype='int' ,    help='current size of the trajectory planner queue' ).register_in_dict( StatusItems )
-StatusItem( name='queue_full',               valtype='int' ,    help='the trajectory planner queue is full' ).register_in_dict( StatusItems )
-StatusItem( name='read_line',                valtype='int' ,    help='line the RS274NGC interpreter is currently reading' ).register_in_dict( StatusItems )
-StatusItem( name='rotation_xy',              valtype='float' ,  help='current XY rotation angle around Z axis' ).register_in_dict( StatusItems )
-StatusItem( name='settings',                 valtype='float[]', help='Current interpreter settings.  settings[0] = sequence number, settings[1] = feed rate, settings[2] = speed' ).register_in_dict( StatusItems )
-StatusItem( name='spindle_brake',            valtype='int' ,    help='spindle brake flag' ).register_in_dict( StatusItems )
-StatusItem( name='spindle_direction',        valtype='int' ,    help='rotational direction of the spindle. forward=1, reverse=-1' ).register_in_dict( StatusItems )
-StatusItem( name='spindle_enabled',          valtype='int' ,    help='spindle enabled flag' ).register_in_dict( StatusItems )
-StatusItem( name='spindle_increasing',       valtype='int' ,    help='' ).register_in_dict( StatusItems )
-StatusItem( name='spindle_override_enabled', valtype='int' ,    help='spindle override enabled flag' ).register_in_dict( StatusItems )
-StatusItem( name='spindle_speed',            valtype='float' ,  help='spindle speed value, rpm, > 0: clockwise, < 0: counterclockwise' ).register_in_dict( StatusItems )
-StatusItem( name='spindlerate',              valtype='float' ,  help='spindle speed override scale' ).register_in_dict( StatusItems )
-StatusItem( name='state',                    valtype='int' ,    help='current command execution status, int. One of RCS_DONE=1, RCS_EXEC=2, RCS_ERROR=3' ).register_in_dict( StatusItems )
-StatusItem( name='task_mode',                valtype='int' ,    help='current task mode, int. one of MODE_MDI=3, MODE_AUTO=2, MODE_MANUAL=1' ).register_in_dict( StatusItems )
-StatusItem( name='task_paused',              valtype='int' ,    help='task paused flag' ).register_in_dict( StatusItems )
-StatusItem( name='task_state',               valtype='int' ,    help='Current task state. one of STATE_ESTOP=1, STATE_ESTOP_RESET=2, STATE_ON=4, STATE_OFF=3' ).register_in_dict( StatusItems )
-StatusItem( name='tool_in_spindle',          valtype='int' ,    help='current tool number' ).register_in_dict( StatusItems )
-StatusItem( name='tool_offset',              valtype='float' ,  help='offset values of the current tool' ).register_in_dict( StatusItems )
-StatusItem( name='velocity',                 valtype='float' ,  help='default velocity, float. reflects [TRAJ]DEFAULT_VELOCITY' ).register_in_dict( StatusItems )
+StatusItem( name='acceleration',             watchable=True, valtype='float',   help='Default acceleration.  Reflects INI file value [TRAJ]DEFAULT_ACCELERATION' ).register_in_dict( StatusItems )
+StatusItem( name='active_queue',             watchable=True, valtype='int'  ,   help='Number of motions blending' ).register_in_dict( StatusItems )
+StatusItem( name='actual_position',          watchable=True, valtype='float[]', help='Current trajectory position. Array of floats: (x y z a b c u v w). In machine units.' ).register_in_dict( StatusItems )
+StatusItem( name='adaptive_feed_enabled',    watchable=True, valtype='int',     help='status of adaptive feedrate override' ).register_in_dict( StatusItems )
+StatusItem( name='ain',                      watchable=True, valtype='float[]', help='current value of the analog input pins' ).register_in_dict( StatusItems )
+StatusItem( name='angular_units',            watchable=True, valtype='string' , help='From [TRAJ]ANGULAR_UNITS ini value' ).register_in_dict( StatusItems )
+StatusItem( name='aout',                     watchable=True, valtype='float[]', help='Current value of the analog output pins' ).register_in_dict( StatusItems )
+StatusItem( name='axes',                     watchable=True, valtype='int' ,    help='From [TRAJ]AXES ini value' ).register_in_dict( StatusItems )
+StatusItem( name='axis_mask',                watchable=True, valtype='int' ,    help='Mask of axis available. X=1, Y=2, Z=4 etc.' ).register_in_dict( StatusItems )
+StatusItem( name='block_delete',             watchable=True, valtype='bool' ,   help='Block delete currently on/off' ).register_in_dict( StatusItems )
+StatusItem( name='command',                  watchable=True, valtype='string' , help='Currently executing command' ).register_in_dict( StatusItems )
+StatusItem( name='current_line',             watchable=True, valtype='int' ,    help='Currently executing line' ).register_in_dict( StatusItems )
+StatusItem( name='current_vel',              watchable=True, valtype='float' ,  help='Current velocity in cartesian space' ).register_in_dict( StatusItems )
+StatusItem( name='cycle_time',               watchable=True, valtype='float' ,  help='From [TRAJ]CYCLE_TIME ini value' ).register_in_dict( StatusItems )
+StatusItem( name='debug',                    watchable=True, valtype='int' ,    help='Debug flag' ).register_in_dict( StatusItems )
+StatusItem( name='delay_left',               watchable=True, valtype='float' ,  help='remaining time on dwell (G4) command, seconds' ).register_in_dict( StatusItems )
+StatusItem( name='din',                      watchable=True, valtype='int[]' ,  help='current value of the digital input pins' ).register_in_dict( StatusItems )
+StatusItem( name='distance_to_go',           watchable=True, valtype='float' ,  help='remaining distance of current move, as reported by trajectory planner, in cartesian space' ).register_in_dict( StatusItems )
+StatusItem( name='dout',                     watchable=True, valtype='int[]' ,  help='current value of the digital output pins' ).register_in_dict( StatusItems )
+StatusItem( name='dtg',                      watchable=True, valtype='float[]', help='remaining distance of current move, as reported by trajectory planner, as a pose (tuple of 9 floats). ' ).register_in_dict( StatusItems )
+StatusItem( name='echo_serial_number',       watchable=True, valtype='int' ,    help='The serial number of the last completed command sent by a UI to task. All commands carry a serial number. Once the command has been executed, its serial number is reflected in echo_serial_number' ).register_in_dict( StatusItems )
+StatusItem( name='enabled',                  watchable=True, valtype='int' ,    help='trajectory planner enabled flag' ).register_in_dict( StatusItems )
+StatusItem( name='estop',                    watchable=True, valtype='int' ,    help='estop flag' ).register_in_dict( StatusItems )
+StatusItem( name='exec_state',               watchable=True, valtype='int' ,    help='Task execution state.  EMC_TASK_EXEC_ERROR = 1, EMC_TASK_EXEC_DONE = 2, EMC_TASK_EXEC_WAITING_FOR_MOTION = 3, EMC_TASK_EXEC_WAITING_FOR_MOTION_QUEUE = 4,EMC_TASK_EXEC_WAITING_FOR_IO = 5, EMC_TASK_EXEC_WAITING_FOR_MOTION_AND_IO = 7,EMC_TASK_EXEC_WAITING_FOR_DELAY = 8, EMC_TASK_EXEC_WAITING_FOR_SYSTEM_CMD = 9, EMC_TASK_EXEC_WAITING_FOR_SPINDLE_ORIENTED = 10' ).register_in_dict( StatusItems )
+StatusItem( name='feed_hold_enabled',        watchable=True, valtype='int' ,    help='enable flag for feed hold' ).register_in_dict( StatusItems )
+StatusItem( name='feed_override_enabled',    watchable=True, valtype='int' ,    help='enable flag for feed override' ).register_in_dict( StatusItems )
+StatusItem( name='feedrate',                 watchable=True, valtype='float' ,  help='current feedrate' ).register_in_dict( StatusItems )
+StatusItem( name='file',                     watchable=True, valtype='string' , help='currently executing gcode file' ).register_in_dict( StatusItems )
+StatusItem( name='file_content',             watchable=False,valtype='string' , help='currently executing gcode file contents' ).register_in_dict( StatusItems )
+StatusItem( name='flood',                    watchable=True, valtype='int' ,    help='flood enabled' ).register_in_dict( StatusItems )
+StatusItem( name='g5x_index',                watchable=True, valtype='int' ,    help='currently active coordinate system, G54=0, G55=1 etc.' ).register_in_dict( StatusItems )
+StatusItem( name='g5x_offset',               watchable=True, valtype='float[]', help='offset of the currently active coordinate system, a pose' ).register_in_dict( StatusItems )
+StatusItem( name='g92_offset',               watchable=True, valtype='float[]', help='pose of the current g92 offset' ).register_in_dict( StatusItems )
+StatusItem( name='gcodes',                   watchable=True, valtype='int[]' ,  help='currently active G-codes. Tuple of 16 ints.' ).register_in_dict( StatusItems )
+StatusItem( name='homed',                    watchable=True, valtype='int' ,    help='flag for homed state' ).register_in_dict( StatusItems )
+StatusItem( name='id',                       watchable=True, valtype='int' ,    help='currently executing motion id' ).register_in_dict( StatusItems )
+StatusItem( name='inpos',                    watchable=True, valtype='int' ,    help='machine-in-position flag' ).register_in_dict( StatusItems )
+StatusItem( name='input_timeout',            watchable=True, valtype='int' ,    help='flag for M66 timer in progress' ).register_in_dict( StatusItems )
+StatusItem( name='interp_state',             watchable=True, valtype='int' ,    help='Current state of RS274NGC interpreter.  EMC_TASK_INTERP_IDLE = 1,EMC_TASK_INTERP_READING = 2,EMC_TASK_INTERP_PAUSED = 3,EMC_TASK_INTERP_WAITING = 4' ).register_in_dict( StatusItems )
+StatusItem( name='interpreter_errcode',      watchable=True, valtype='int' ,    help='Current RS274NGC interpreter return code. INTERP_OK=0, INTERP_EXIT=1, INTERP_EXECUTE_FINISH=2, INTERP_ENDFILE=3, INTERP_FILE_NOT_OPEN=4, INTERP_ERROR=5' ).register_in_dict( StatusItems )
+StatusItem( name='joint_actual_position',    watchable=True, valtype='float[]' ,help='Actual joint positions' ).register_in_dict( StatusItems )
+StatusItem( name='joint_position',           watchable=True, valtype='float[]', help='Desired joint positions' ).register_in_dict( StatusItems )
+StatusItem( name='kinematics_type',          watchable=True, valtype='int' ,    help='identity=1, serial=2, parallel=3, custom=4 ' ).register_in_dict( StatusItems )
+StatusItem( name='limit',                    watchable=True, valtype='int[]' ,  help='Tuple of axis limit masks. minHardLimit=1, maxHardLimit=2, minSoftLimit=4, maxSoftLimit=8' ).register_in_dict( StatusItems )
+StatusItem( name='linear_units',             watchable=True, valtype='int' ,    help='reflects [TRAJ]LINEAR_UNITS ini value' ).register_in_dict( StatusItems )
+StatusItem( name='lube',                     watchable=True, valtype='int' ,    help='lube on flag' ).register_in_dict( StatusItems )
+StatusItem( name='lube_level',               watchable=True, valtype='int' ,    help='reflects iocontrol.0.lube_level' ).register_in_dict( StatusItems )
+StatusItem( name='max_acceleration',         watchable=True, valtype='float' ,  help='Maximum acceleration. reflects [TRAJ]MAX_ACCELERATION ' ).register_in_dict( StatusItems )
+StatusItem( name='max_velocity',             watchable=True, valtype='float' ,  help='Maximum velocity, float. reflects [TRAJ]MAX_VELOCITY.' ).register_in_dict( StatusItems )
+StatusItem( name='mcodes',                   watchable=True, valtype='int[]' ,  help='currently active M-codes. tuple of 10 ints.' ).register_in_dict( StatusItems )
+StatusItem( name='mist',                     watchable=True, valtype='int' ,    help='mist on flag' ).register_in_dict( StatusItems )
+StatusItem( name='motion_line',              watchable=True, valtype='int' ,    help='source line number motion is currently executing' ).register_in_dict( StatusItems )
+StatusItem( name='motion_mode',              watchable=True, valtype='int' ,    help='motion mode' ).register_in_dict( StatusItems )
+StatusItem( name='motion_type',              watchable=True, valtype='int' ,    help='Trajectory planner mode. EMC_TRAJ_MODE_FREE = 1 = independent-axis motion, EMC_TRAJ_MODE_COORD = 2 coordinated-axis motion, EMC_TRAJ_MODE_TELEOP = 3 = velocity based world coordinates motion' ).register_in_dict( StatusItems )
+StatusItem( name='optional_stop',            watchable=True, valtype='int' ,    help='option stop flag' ).register_in_dict( StatusItems )
+StatusItem( name='paused',                   watchable=True, valtype='int' ,    help='motion paused flag' ).register_in_dict( StatusItems )
+StatusItem( name='pocket_prepped',           watchable=True, valtype='int' ,    help='A Tx command completed, and this pocket is prepared. -1 if no prepared pocket' ).register_in_dict( StatusItems )
+StatusItem( name='position',                 watchable=True, valtype='float[]', help='Trajectory position, a pose.' ).register_in_dict( StatusItems )
+StatusItem( name='probe_tripped',            watchable=True, valtype='int' ,    help='Flag, true if probe has tripped (latch)' ).register_in_dict( StatusItems )
+StatusItem( name='probe_val',                watchable=True, valtype='int' ,    help='reflects value of the motion.probe-input pin' ).register_in_dict( StatusItems )
+StatusItem( name='probed_position',          watchable=True, valtype='float[]', help='position where probe tripped' ).register_in_dict( StatusItems )
+StatusItem( name='probing',                  watchable=True, valtype='int' ,    help='flag, true if a probe operation is in progress' ).register_in_dict( StatusItems )
+StatusItem( name='program_units',            watchable=True, valtype='int' ,    help='one of CANON_UNITS_INCHES=1, CANON_UNITS_MM=2, CANON_UNITS_CM=3' ).register_in_dict( StatusItems )
+StatusItem( name='queue',                    watchable=True, valtype='int' ,    help='current size of the trajectory planner queue' ).register_in_dict( StatusItems )
+StatusItem( name='queue_full',               watchable=True, valtype='int' ,    help='the trajectory planner queue is full' ).register_in_dict( StatusItems )
+StatusItem( name='read_line',                watchable=True, valtype='int' ,    help='line the RS274NGC interpreter is currently reading' ).register_in_dict( StatusItems )
+StatusItem( name='rotation_xy',              watchable=True, valtype='float' ,  help='current XY rotation angle around Z axis' ).register_in_dict( StatusItems )
+StatusItem( name='settings',                 watchable=True, valtype='float[]', help='Current interpreter settings.  settings[0] = sequence number, settings[1] = feed rate, settings[2] = speed' ).register_in_dict( StatusItems )
+StatusItem( name='spindle_brake',            watchable=True, valtype='int' ,    help='spindle brake flag' ).register_in_dict( StatusItems )
+StatusItem( name='spindle_direction',        watchable=True, valtype='int' ,    help='rotational direction of the spindle. forward=1, reverse=-1' ).register_in_dict( StatusItems )
+StatusItem( name='spindle_enabled',          watchable=True, valtype='int' ,    help='spindle enabled flag' ).register_in_dict( StatusItems )
+StatusItem( name='spindle_increasing',       watchable=True, valtype='int' ,    help='' ).register_in_dict( StatusItems )
+StatusItem( name='spindle_override_enabled', watchable=True, valtype='int' ,    help='spindle override enabled flag' ).register_in_dict( StatusItems )
+StatusItem( name='spindle_speed',            watchable=True, valtype='float' ,  help='spindle speed value, rpm, > 0: clockwise, < 0: counterclockwise' ).register_in_dict( StatusItems )
+StatusItem( name='spindlerate',              watchable=True, valtype='float' ,  help='spindle speed override scale' ).register_in_dict( StatusItems )
+StatusItem( name='state',                    watchable=True, valtype='int' ,    help='current command execution status, int. One of RCS_DONE=1, RCS_EXEC=2, RCS_ERROR=3' ).register_in_dict( StatusItems )
+StatusItem( name='task_mode',                watchable=True, valtype='int' ,    help='current task mode, int. one of MODE_MDI=3, MODE_AUTO=2, MODE_MANUAL=1' ).register_in_dict( StatusItems )
+StatusItem( name='task_paused',              watchable=True, valtype='int' ,    help='task paused flag' ).register_in_dict( StatusItems )
+StatusItem( name='task_state',               watchable=True, valtype='int' ,    help='Current task state. one of STATE_ESTOP=1, STATE_ESTOP_RESET=2, STATE_ON=4, STATE_OFF=3' ).register_in_dict( StatusItems )
+StatusItem( name='tool_in_spindle',          watchable=True, valtype='int' ,    help='current tool number' ).register_in_dict( StatusItems )
+StatusItem( name='tool_offset',              watchable=True, valtype='float' ,  help='offset values of the current tool' ).register_in_dict( StatusItems )
+StatusItem( name='velocity',                 watchable=True, valtype='float' ,  help='default velocity, float. reflects [TRAJ]DEFAULT_VELOCITY' ).register_in_dict( StatusItems )
+StatusItem( name='ls',                       watchable=True, valtype='string[]',help='Get a list of gcode files.  Optionally specify directory with "directory":"string", or default directory will be used.  Only *.ngc files will be listed.' ).register_in_dict( StatusItems )
+
+StatusItem( name='backplot',                 watchable=False, valtype='string[]',help='Backplot information.  Potentially very large list of lines.' ).register_in_dict( StatusItems )
+StatusItem( name='config',                   watchable=False, valtype='dict',    help='Config (ini) file contents.', requiresLinuxCNCUp=False  ).register_in_dict( StatusItems )
+StatusItem( name='config_item',              watchable=False, valtype='dict',    help='Specific section/name from the config file.  Pass in section=??? and name=???.', requiresLinuxCNCUp=False  ).register_in_dict( StatusItems )
+StatusItem( name='halfile',                  watchable=False, valtype='string',  help='Contents of a hal file.  Pass in filename=??? to specify the hal file name', requiresLinuxCNCUp=False ).register_in_dict( StatusItems )
+StatusItem( name='halgraph',                 watchable=False, valtype='string',  help='Filename of the halgraph generated from the currently running instance of LinuxCNC.  Filename will be "halgraph.svg"' ).register_in_dict( StatusItems )
+StatusItem( name='ini_file_name',            watchable=True,  valtype='string',  help='INI file to use for next LinuxCNC start.', requiresLinuxCNCUp=False ).register_in_dict( StatusItems )
 
 # Array Status items
-StatusItem( name='tool_table',               valtype='float[]', help='list of tool entries. Each entry is a sequence of the following fields: id, xoffset, yoffset, zoffset, aoffset, boffset, coffset, uoffset, voffset, woffset, diameter, frontangle, backangle, orientation', isarray=True, arraylen=tool_table_length ).register_in_dict( StatusItems )
-StatusItem( name='axis',                     valtype='dict' ,   help='Axis Dictionary', isarray=True, arraylen=axis_length ).register_in_dict( StatusItems )
+StatusItem( name='tool_table',               watchable=True, valtype='float[]', help='list of tool entries. Each entry is a sequence of the following fields: id, xoffset, yoffset, zoffset, aoffset, boffset, coffset, uoffset, voffset, woffset, diameter, frontangle, backangle, orientation', isarray=True, arraylen=tool_table_length ).register_in_dict( StatusItems )
+StatusItem( name='axis',                     watchable=True, valtype='dict' ,   help='Axis Dictionary', isarray=True, arraylen=axis_length ).register_in_dict( StatusItems )
 
 
 # *****************************************************
@@ -409,6 +582,105 @@ class CommandItem( object ):
     # puts this object into the dictionary, with the key == self.name
     def register_in_dict( self, dictionary ):
         dictionary[ self.name ] = self
+
+    # called in a "put_config" command to write INI data to INI file, completely re-writing the file
+    def put_ini_data( self, commandDict ):
+        global INI_FILENAME
+        global INI_FILE_PATH         
+        reply = { 'code': LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND }
+        try:
+            # construct the section list
+            sections = {}
+            sections_sorted = []
+            for line in commandDict['data']['parameters']:
+                sections[line['values']['section']] = line['values']['section']
+            for section in sections:
+                sections_sorted.append( section )
+            sections_sorted = sorted(sections_sorted)
+
+            inifile = open(INI_FILENAME, 'w', 1)
+
+            for section in sections_sorted:
+                # write out the comments before the section header
+                if (section in commandDict['data']['sections']):
+                    commentlines = commandDict['data']['sections'][section]['comment'].split('\n')
+                    for c_line in commentlines:
+                        if len(c_line) > 0:
+                            inifile.write( '#' + c_line + '\n' )
+
+                #write the section header
+                inifile.write( '[' + section + ']\n' )
+
+                #write the key/value pairs
+                for line in commandDict['data']['parameters']:
+                    if line['values']['section'] == section :
+                        if (len(line['values']['comment']) > 0):
+                            commentlines = line['values']['comment'].split('\n')
+                            for c_line in commentlines:
+                                if len(c_line) > 0:
+                                    inifile.write( '#' + c_line +'\n' )
+                        if (len(line['values']['name']) > 0):
+                            inifile.write( line['values']['name'] + '=' + line['values']['value'] + '\n' )
+                inifile.write('\n\n')
+            inifile.close()    
+            reply['code'] = LinuxCNCServerCommand.REPLY_COMMAND_OK
+        except:
+            reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
+        finally:
+            try:
+                inifile.close()
+            except:
+                pass
+
+        return reply
+
+    # writes the specified HAL file to disk
+    def put_hal_file( self, filename, data ):
+        global INI_FILENAME
+        global INI_FILE_PATH
+        reply = {'code':LinuxCNCServerCommand.REPLY_COMMAND_OK}
+        try:
+            # strip off just the filename, if a path was given
+            # we will only look in the config directory, so we ignore path
+            [h,f] = os.path.split( filename )
+            if not StatusItem.check_hal_file_listed_in_ini( f ):
+                reply['code']=LinuxCNCServerCommand.REPLY_ERROR_INVALID_PARAMETER
+                return reply
+
+            try:
+                fo = open( os.path.join( INI_FILE_PATH, f ), 'w' )
+                fo.write(data)
+            except:
+                reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
+            finally:
+                try:
+                    fo.close()
+                except:
+                    reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
+            
+        except Exception as ex: 
+            reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
+        
+        return reply 
+    
+
+    def shutdown_linuxcnc( self ):
+        try:
+            displayname = StatusItem.get_ini_data( only_section='DISPLAY', only_name='DISPLAY' )['data']['parameters'][0]['values']['value']
+            p = subprocess.Popen( ['pkill', displayname] , stderr=subprocess.STDOUT )
+            return {'code':LinuxCNCServerCommand.REPLY_COMMAND_OK }
+        except:
+            return {'code':LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND }
+        
+    def start_linuxcnc( self ):
+        global INI_FILENAME
+        global INI_FILE_PATH
+        p = subprocess.Popen(['pidof', '-x', 'linuxcnc'], stdout=subprocess.PIPE )
+        result = p.communicate()[0]
+        if len(result) > 0:
+            return {'code':LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND}
+        subprocess.Popen(['linuxcnc', INI_FILENAME], stderr=subprocess.STDOUT )
+        return {'code':LinuxCNCServerCommand.REPLY_COMMAND_OK}
 
     def execute( self, passed_command_dict ):
         global INI_FILENAME
@@ -463,6 +735,14 @@ class CommandItem( object ):
                     INI_FILENAME = passed_command_dict.get( 'ini_file_name', INI_FILENAME )
                     [INI_FILE_PATH, x] = os.path.split( INI_FILENAME )
                     reply['code'] = LinuxCNCServerCommand.REPLY_COMMAND_OK
+                elif (self.name == 'config'): 
+                    reply = self.put_ini_data(passed_command_dict)
+                elif (self.name == 'halfile'):
+                    reply = self.put_hal_file( filename=passed_command_dict['filename'].strip(), data=passed_command_dict['data'] )
+                elif (self.name == 'shutdown'):
+                    reply = self.shutdown_linuxcnc()
+                elif (self.name == 'startup'):
+                    reply = self.start_linuxcnc()
                 else:
                     reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
                 return reply
@@ -476,10 +756,12 @@ class CommandItem( object ):
 
 
 
-# Pre-defined Command Items
+# Custom Command Items
 CommandItems = {}
 CommandItem( name='halcmd',                  paramTypes=[ {'pname':'param_string', 'ptype':'string', 'optional':False} ],  help='Call halcmd. Results returned in a string.', command_type=CommandItem.HAL ).register_in_dict( CommandItems )
 CommandItem( name='ini_file_name',           paramTypes=[ {'pname':'ini_file_name', 'ptype':'string', 'optional':False} ],  help='Set the INI file to use on next linuxCNC load.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
+
+# Pre-defined Command Items
 CommandItem( name='abort',                   paramTypes=[],      help='send EMC_TASK_ABORT message' ).register_in_dict( CommandItems )
 CommandItem( name='auto',                    paramTypes=[ {'pname':'auto', 'ptype':'lookup', 'lookup-vals':['AUTO_RUN','AUTO_STEP','AUTO_RESUME','AUTO_PAUSE'], 'optional':False }, {'pname':'run_from', 'ptype':'int', 'optional':True} ],      help='run, step, pause or resume a program.  auto legal values: AUTO_RUN, AUTO_STEP, AUTO_RESUME, AUTO_PAUSE' ).register_in_dict( CommandItems )
 CommandItem( name='brake',                   paramTypes=[ {'pname':'onoff', 'ptype':'lookup', 'lookup-vals':['BRAKE_ENGAGE','BRAKE_RELEASE'], 'optional':False} ],      help='engage or release spindle brake.  Legal values: BRAKE_ENGAGE or BRAKE_RELEASE' ).register_in_dict( CommandItems )
@@ -514,8 +796,13 @@ CommandItem( name='teleop_vector',           paramTypes=[ {'pname':'p1', 'ptype'
 CommandItem( name='tool_offset',             paramTypes=[ {'pname':'toolnumber', 'ptype':'int', 'optional':False}, {'pname':'z_offset', 'ptype':'float', 'optional':False}, {'pname':'x_offset', 'ptype':'float', 'optional':False}, {'pname':'diameter', 'ptype':'float', 'optional':False}, {'pname':'frontangle', 'ptype':'float', 'optional':False}, {'pname':'backangle', 'ptype':'float', 'optional':False}, {'pname':'orientation', 'ptype':'float', 'optional':False} ],      help='set the tool offset' ).register_in_dict( CommandItems )
 CommandItem( name='traj_mode',               paramTypes=[ {'pname':'mode', 'ptype':'lookup', 'lookup-vals':['TRAJ_MODE_FREE','TRAJ_MODE_COORD','TRAJ_MODE_TELEOP'], 'optional':False} ],      help='set trajectory mode.  Legal values: TRAJ_MODE_FREE, TRAJ_MODE_COORD, TRAJ_MODE_TELEOP' ).register_in_dict( CommandItems )
 CommandItem( name='unhome',                  paramTypes=[ {'pname':'axis', 'ptype':'int', 'optional':False} ],       help='unhome a given axis' ).register_in_dict( CommandItems )
-CommandItem( name='wait_complete',          paramTypes=[ {'pname':'timeout', 'ptype':'float', 'optional':True} ],       help='wait for completion of the last command sent. If timeout in seconds not specified, default is 1 second' ).register_in_dict( CommandItems )
+CommandItem( name='wait_complete',           paramTypes=[ {'pname':'timeout', 'ptype':'float', 'optional':True} ],       help='wait for completion of the last command sent. If timeout in seconds not specified, default is 1 second' ).register_in_dict( CommandItems )
 
+CommandItem( name='config',                  paramTypes=[ {'pname':'data', 'ptype':'dict', 'optional':False} ],       help='Overwrite the config file.  Parameter is a dictionary with the same format as returned from "get config"', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
+CommandItem( name='halfile',                 paramTypes=[ {'pname':'filename', 'ptype':'string', 'optional':False}, {'pname':'data', 'ptype':'string', 'optional':False} ],       help='Overwrite the specified file.  Parameter is a filename, then a string containing the new hal file contents.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
+
+CommandItem( name='shutdown',                paramTypes=[ ],       help='Shutdown LinuxCNC system.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
+CommandItem( name='startup',                paramTypes=[ ],        help='Start LinuxCNC system.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
 
 # *****************************************************
 # Config file help
@@ -735,7 +1022,7 @@ HAL_INTERFACE = HALInterface()
 
 # Config File Editor
 INIFileDataTemplate = {
-    "data":[],
+    "parameters":[],
     "sections":{}
     }
 
@@ -745,7 +1032,6 @@ INIFileDataTemplate = {
 # commands come in as json objects, and are converted to dict python objects
 # *****************************************************
 class LinuxCNCServerCommand( object ):
-    COMMANDS = [ 'get', 'put', 'watch', 'invalid', 'list_status', 'list_commands', 'keepalive', 'get_config', 'put_config' ]
 
     # Error codes
     REPLY_NAK = '?ERR'
@@ -787,220 +1073,20 @@ class LinuxCNCServerCommand( object ):
 
     # update on a watched variable 
     def on_new_poll( self ):
-        if (self.statusitem.name == 'file_content'):
+        if (not self.statusitem.watchable):
+            self.linuxcnc_status_poller.del_observer( self.on_new_poll )
             return
         if self.server_command_handler.isclosed:
             self.linuxcnc_status_poller.del_observer( self.on_new_poll )
             return
-        newval = self.statusitem.get_cur_status_value(self.linuxcnc_status_poller, self.item_index )
-        if (self.replyval['data'] != newval):
-            self.replyval = {'code':LinuxCNCServerCommand.REPLY_COMMAND_OK, 'data':newval}
+        newval = self.statusitem.get_cur_status_value(self.linuxcnc_status_poller, self.item_index, self.commandDict )
+        if (self.replyval['data'] != newval['data']):
+            self.replyval = newval
             self.server_command_handler.send_message( self.form_reply() )
+            if ( newval['code'] != LinuxCNCServerCommand.REPLY_COMMAND_OK ):
+                self.linuxcnc_status_poller.del_observer( self.on_new_poll )
 
-    # called in a "get_config" command to read the config file and output it's values
-    def get_ini_data( self, only_section=None, only_name=None ):
-        global INIFileDataTemplate
-        global INI_FILENAME
-        global INI_FILE_PATH         
-        INIFileData = deepcopy(INIFileDataTemplate)
-        reply = { 'code':LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND }
-        
-        sectionRegEx = re.compile( r"^\s*\[\s*(.+?)\s*\]" )
-        keyValRegEx = re.compile( r"^\s*(.+?)\s*=\s*(.+?)\s*$" )
-        try:
-            section = 'NONE'
-            comments = ''
-            idv = 1
-            with open( INI_FILENAME ) as file_:
-                for line in file_:
-                    if  line.lstrip().find('#') == 0 or line.lstrip().find(';') == 0:
-                        comments = comments + line[1:]
-                    else:
-                        mo = sectionRegEx.search( line )
-                        if mo:
-                            section = mo.group(1)
-                            hlp = ''
-                            try:
-                                if (section in ConfigHelp):
-                                    hlp = ConfigHelp[section]['']['help'].encode('ascii','replace')
-                            except:
-                                pass
-                            if (only_section is None or only_section == section):
-                                INIFileData['sections'][section] = { 'comment':comments, 'help':hlp }
-                            comments = '' 
-                        else:
-                            mo = keyValRegEx.search( line )
-                            if mo:
-                                hlp = ''
-                                default = ''
-                                try:
-                                    if (section in ConfigHelp):
-                                        if (mo.group(1) in ConfigHelp[section]):
-                                            hlp = ConfigHelp[section][mo.group(1)]['help'].encode('ascii','replace')
-                                            default = ConfigHelp[section][mo.group(1)]['default'].encode('ascii','replace')
-                                except:
-                                    pass
 
-                                if (only_section is None or (only_section == section and only_name == mo.group(1) )):
-                                    INIFileData['data'].append( { 'id':idv, 'values':{ 'section':section, 'name':mo.group(1), 'value':mo.group(2), 'comment':comments, 'help':hlp, 'default':default } } )
-                                comments = ''
-                                idv = idv + 1
-                    
-            reply['code'] = LinuxCNCServerCommand.REPLY_COMMAND_OK
-            reply['config_data'] = INIFileData
-        except Exception as ex:
-            reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
-
-        return reply
-
-    # called in a "put_config" command to write INI data to INI file, completely re-writing the file
-    def put_ini_data( self ):
-        global INI_FILENAME
-        global INI_FILE_PATH         
-        reply = { 'code': LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND }
-        try:
-            # construct the section list
-            sections = {}
-            sections_sorted = []
-            for line in self.commandDict['config_data']['data']:
-                sections[line['values']['section']] = line['values']['section']
-            for section in sections:
-                sections_sorted.append( section )
-            sections_sorted = sorted(sections_sorted)
-
-            inifile = open(INI_FILENAME, 'w', 1)
-
-            for section in sections_sorted:
-                # write out the comments before the section header
-                if (section in self.commandDict['config_data']['sections']):
-                    commentlines = self.commandDict['config_data']['sections'][section]['comment'].split('\n')
-                    for c_line in commentlines:
-                        if len(c_line) > 0:
-                            inifile.write( '#' + c_line + '\n' )
-
-                #write the section header
-                inifile.write( '[' + section + ']\n' )
-
-                #write the key/value pairs
-                for line in self.commandDict['config_data']['data']:
-                    if line['values']['section'] == section :
-                        if (len(line['values']['comment']) > 0):
-                            commentlines = line['values']['comment'].split('\n')
-                            for c_line in commentlines:
-                                if len(c_line) > 0:
-                                    inifile.write( '#' + c_line +'\n' )
-                        if (len(line['values']['name']) > 0):
-                            inifile.write( line['values']['name'] + '=' + line['values']['value'] + '\n' )
-                inifile.write('\n\n')
-            inifile.close()    
-            reply['code'] = LinuxCNCServerCommand.REPLY_COMMAND_OK
-        except:
-            pass
-        finally:
-            try:
-                inifile.close()
-            except:
-                pass
-
-        return reply
-
-    def check_hal_file_listed_in_ini( self, filename ):
-        # check this is a valid hal file name
-        f = filename
-        found = False
-        halfiles = self.get_ini_data( only_section='HAL', only_name='HALFILE' )
-        halfiles = halfiles['config_data']['data']
-        for v in halfiles:
-            if (v['values']['value'] == f):
-                found = True
-                break
-        if not found:
-            halfiles = self.get_ini_data( only_section='HAL', only_name='POSTGUI_HALFILE' )
-            halfiles = halfiles['config_data']['data']
-            for v in halfiles:
-                if (v['values']['value'] == f):
-                    found = True
-                    break
-        return found
-    
-
-    def get_hal_file( self, filename ):
-        global INI_FILENAME
-        global INI_FILE_PATH        
-        try:
-            reply = { 'code': LinuxCNCServerCommand.REPLY_COMMAND_OK }
-            # strip off just the filename, if a path was given
-            # we will only look in the config directory, so we ignore path
-            [h,f] = os.path.split( filename )
-            if not self.check_hal_file_listed_in_ini( f ):
-                reply['code']= LinuxCNCServerCommand.REPLY_ERROR_INVALID_PARAMETER
-                return reply
-
-            reply['hal_data'] = ''
-
-            try:
-                fo = open( os.path.join( INI_FILE_PATH, f ), 'r' ) 
-                reply['hal_data'] = fo.read()
-            except:
-                reply['hal_data'] = ''
-            finally:
-                try:
-                    fo.close()
-                except:
-                    pass
-            
-        except Exception as ex:
-            reply['hal_data'] = ''
-            reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
-
-        return reply
-
-    def put_hal_file( self, filename, data ):
-        global INI_FILENAME
-        global INI_FILE_PATH        
-        try:
-            reply = {'code':LinuxCNCServerCommand.REPLY_COMMAND_OK}
-            
-            # strip off just the filename, if a path was given
-            # we will only look in the config directory, so we ignore path
-            [h,f] = os.path.split( filename )
-            if not self.check_hal_file_listed_in_ini( f ):
-                reply['code']=LinuxCNCServerCommand.REPLY_ERROR_INVALID_PARAMETER
-                return reply
-
-            try:
-                fo = open( os.path.join( INI_FILE_PATH, f ), 'w' )
-                fo.write(data)
-            except:
-                reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
-            finally:
-                try:
-                    fo.close()
-                except:
-                    reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
-            
-        except Exception as ex: 
-            reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
-        
-        return reply 
-
-    def shutdown_linuxcnc( self ):
-        displayname = self.get_ini_data( only_section='DISPLAY', only_name='DISPLAY' )['config_data']['data'][0]['values']['value']
-        p = subprocess.Popen( ['pkill', displayname] , stderr=subprocess.STDOUT )
-        return {'code':LinuxCNCServerCommand.REPLY_COMMAND_OK}
-        
-    def start_linuxcnc( self ):
-        global INI_FILENAME
-        global INI_FILE_PATH         
-        p = subprocess.Popen(['pidof', '-x', 'linuxcnc'], stdout=subprocess.PIPE )
-        result = p.communicate()[0]
-        if len(result) > 0:
-            return {'code':LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND}
-        
-        subprocess.Popen(['linuxcnc', INI_FILENAME], stderr=subprocess.STDOUT )
-        return {'code':LinuxCNCServerCommand.REPLY_COMMAND_OK}
-        
-    
         
     # this is the main interface to a LinuxCNCServerCommand.  This determines what the command is, and executes it.
     # Callbacks are made to the self.server_command_handler to write output to the websocket
@@ -1021,9 +1107,7 @@ class LinuxCNCServerCommand( object ):
                     if ( self.statusitem.isarray ):
                         self.item_index = self.commandDict['index']
                         self.replyval['index'] = self.item_index;
-                    self.replyval['data'] = self.statusitem.get_cur_status_value(self.linuxcnc_status_poller, self.item_index )
-                
-                self.replyval['code'] = LinuxCNCServerCommand.REPLY_COMMAND_OK
+                    self.replyval = self.statusitem.get_cur_status_value(self.linuxcnc_status_poller, self.item_index, self.commandDict )
             except:
                 self.replyval['code'] = LinuxCNCServerCommand.REPLY_NAK
             
@@ -1041,12 +1125,9 @@ class LinuxCNCServerCommand( object ):
                     if ( self.statusitem.isarray ):
                         self.item_index = self.commandDict['index']
                         self.replyval['index'] = self.item_index;
-                    self.replyval['data'] = self.statusitem.get_cur_status_value(self.linuxcnc_status_poller, self.item_index )
-                    self.lastval = self.replyval['data']
-                    self.linuxcnc_status_poller.add_observer( self.on_new_poll )
-                    
-
-                self.replyval['code'] = LinuxCNCServerCommand.REPLY_COMMAND_OK
+                    self.replyval = self.statusitem.get_cur_status_value(self.linuxcnc_status_poller, self.item_index, self.commandDict )
+                    if (self.replyval['code'] == LinuxCNCServerCommand.REPLY_COMMAND_OK):
+                        self.linuxcnc_status_poller.add_observer( self.on_new_poll )
             except:
                 self.replyval = LinuxCNCServerCommand.REPLY_NAK
 
@@ -1084,38 +1165,6 @@ class LinuxCNCServerCommand( object ):
                 self.replyval['elapsed_time'] = HAL_INTERFACE.time_elapsed
             except:
                 self.replyval['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
-            
-
-        elif (self.command == 'halgraph'):
-            analyzer = MakeHALGraph.HALAnalyzer()
-            analyzer.parse_pins()
-            analyzer.write_svg( os.path.join(application_path,"static/halgraph.svg") )
-            self.replyval['code'] = LinuxCNCServerCommand.REPLY_COMMAND_OK
-            self.replyval['link'] = 'static/halgraph.svg'
-            
-
-        elif (self.command == 'get_config'):
-            self.replyval = self.get_ini_data()
-            
-        elif (self.command == 'put_config'):
-            self.replyval = self.put_ini_data()
-
-        elif (self.command == 'get_config_item'):
-            try:
-                self.replyval = self.get_ini_data( only_section=self.commandDict['section'].strip(), only_name=self.commandDict['name'].strip() )
-                self.replyval['code'] = LinuxCNCServerCommand.REPLY_COMMAND_OK
-            except: 
-                self.replyval = {'code':LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER}
-        elif (self.command == 'get_hal_file'):
-            try:
-                self.replyval = self.get_hal_file( filename=self.commandDict['filename'].strip() ) 
-            except:
-                self.replyval = {'code': LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER}
-        elif (self.command == 'put_hal_file'):
-            try:
-                self.replyval = self.put_hal_file( filename=self.commandDict['filename'].strip(), data=self.commandDict['hal_data'] )  
-            except:
-                self.replyval = {'code':LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER}
         elif (self.command == 'shutdown'):
             try:
                 self.replyval = self.shutdown_linuxcnc()  
@@ -1149,13 +1198,18 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
         self.stream.socket.setsockopt( socket.IPPROTO_TCP, socket.TCP_NODELAY, 1 )
 
     def allow_draft76(self):
-        return True    
+        return False    
 
     def on_message(self, message): 
         global LINUXCNCSTATUS
-        
+        #print "GOT: " + message
         if (self.user_validated):
-            self.write_message(LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_message=message ).execute())
+            try:
+                reply = LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_message=message ).execute()
+                self.write_message(reply)
+                #print "Reply: " + reply
+            except Exception as ex:
+                print ex
         else:
             try:
                 global userdict
@@ -1174,6 +1228,8 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
 
     def send_message( self, message_to_send ):
         self.write_message( message_to_send )
+        #if (message_to_send.find("actual_position") < 0):
+            #print "SEND: " + message_to_send
 
     def on_close(self):
         self.isclosed = True
@@ -1406,7 +1462,10 @@ def main():
     global INI_FILENAME
     global INI_FILE_PATH
     global userdict
+    global instance_number
+    instance_number = random()
     def fn():
+        instance_number = random()
         print "Webserver reloading..."
 
     if len(sys.argv) < 2:

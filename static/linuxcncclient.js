@@ -174,6 +174,10 @@ function StatusListRecieved(evt)
     for(var i=0;i<status_item_list['data'].length;i++)
     {
         var arcnt ;
+		
+		if (!status_item_list['data'][i]['watchable'])
+			continue;
+		
         if (status_item_list['data'][i]["isarray"])
             arcnt = status_item_list['data'][i]["arraylength"];
         else
@@ -390,7 +394,7 @@ function CNCUpdateHALGraphReply(evt)
    
     var cell = document.createElement('img');
     cell.onload = CNCUpdateHALGraphImgLoad;
-    cell.setAttribute('src', result['link'] );
+    cell.setAttribute('src', result['data'] );
     cell.setAttribute('id', 'HALGraphImg')   
     
     // clear any old images, and insert this new one
@@ -403,7 +407,7 @@ function CNCUpdateHALGraphReply(evt)
 
 function CNCUpdateHALGraphSubmit()
 {
-    ws.send( JSON.stringify({ "id":"halgraph", "command":"halgraph" }) ) ;
+    ws.send( JSON.stringify({ "id":"halgraph", "command":"get", "name":"halgraph" }) ) ;
 }
 
 
@@ -432,7 +436,7 @@ function ConfigSocketOpen()
     
     ws.onmessage = ConfigSocketMessageHandler;
     document.getElementById("Command_Reply").innerHTML = "Ready to load configuration."
-    ws.send( JSON.stringify({ "id":"CONFIG", "command":"get_config" }) ) ;
+    ws.send( JSON.stringify({ "id":"CONFIG", "command":"get", "name":"config" }) ) ;
 }
 
 // helper function to get path of a demo image
@@ -620,7 +624,7 @@ function ConfigWrite()
             newobj[ newobj.length-1 ]['action'] = "";
         }
             
-    var cmd = JSON.stringify({ "id":"Write_Config", "command":"put_config", "config_data":{ "data":newobj, "sections":section_list } });
+    var cmd = JSON.stringify({ "id":"Write_Config", "command":"put", "name":"config", "data":{ "parameters":newobj, "sections":section_list } });
     ws.send( cmd ) ;
     
     window.onbeforeunload = null;
@@ -675,7 +679,7 @@ function ConfigSocketMessageHandler(evt)
     {
 
         // Parse out all the unique section headers
-        section_list = result["config_data"]["sections"];
+        section_list = result["data"]["sections"];
         
         // sort the list
         var section_sorted_list = [];
@@ -689,10 +693,10 @@ function ConfigSocketMessageHandler(evt)
         {
             ConfigData[ section_sorted_list[idx] ] = [];
         }
-        for ( var idx in result["config_data"]["data"] )
+        for ( var idx in result["data"]["parameters"] )
         {
-            var section = result["config_data"]["data"][idx]["values"]["section"];
-            ConfigData[ section ].push( result["config_data"]["data"][idx] );
+            var section = result["data"]["parameters"][idx]["values"]["section"];
+            ConfigData[ section ].push( result["data"]["parameters"][idx] );
         }    
 
         for (sec in ConfigData )
@@ -758,7 +762,7 @@ function HALSetupSocketOpen()
     
     ws.onmessage = HALSetupSocketMessageHandler;
     document.getElementById("Command_Reply").innerHTML = "Ready to load configuration."
-    ws.send( JSON.stringify({ "id":"HALSetup1", "command":"get_config_item", "section":"HAL", "name":"HALFILE" }) ) ;
+    ws.send( JSON.stringify({ "id":"HALSetup1", "command":"get", "name":"config_item", "section":"HAL", "parameter":"HALFILE" }) ) ;
     
     try {
         CodeMirror.connect(window, "resize", function() {
@@ -801,7 +805,7 @@ function HALSetupSave()
         return
     }
 
-    ws.send( JSON.stringify({ "id":"HALWriteData", "command":"put_hal_file", "filename":HALSetupCurrentFile, 'hal_data':HALCodeMirror.getValue() }) ) ;
+    ws.send( JSON.stringify({ "id":"HALWriteData", "command":"put", "name":"halfile", "filename":HALSetupCurrentFile, 'data':HALCodeMirror.getValue() }) ) ;
 
     HALEditDataChanged = false;
 }
@@ -813,31 +817,31 @@ function HALSetupSocketMessageHandler(evt)
     if ( result['id'] == 'HALSetup1' )
     {
         HALFiles = [];
-        for ( var num in result['config_data']['data'] )
+        for ( var num in result['data']['parameters'] )
         {
-            HALFiles.push( result['config_data']['data'][num]['values']['value'] );
+            HALFiles.push( result['data']['parameters'][num]['values']['value'] );
         }
-        ws.send( JSON.stringify({ "id":"HALSetup2", "command":"get_config_item", "section":"HAL", "name":"POSTGUI_HALFILE" }) ) ;
+        ws.send( JSON.stringify({ "id":"HALSetup2", "command":"get", "name":"config_item", "section":"HAL", "name":"POSTGUI_HALFILE" }) ) ;
     } else if ( result['id'] == 'HALSetup2' )
     {    
-        for ( var num in result['config_data']['data'] )
+        for ( var num in result['data']['parameters'] )
         {
-            HALFiles.push( result['config_data']['data'][num]['values']['value'] );
+            HALFiles.push( result['data']['parameters'][num]['values']['value'] );
         }
         
-        ws.send( JSON.stringify({ "id":"HALSetup3", "command":"get_config_item", "section":"HAL", "name":"SHUTDOWN" }) ) ;
+        ws.send( JSON.stringify({ "id":"HALSetup3", "command":"get", "name":"config_item", "section":"HAL", "name":"SHUTDOWN" }) ) ;
 
     } else if ( result['id'] == 'HALSetup3' )
     {    
-        for ( var num in result['config_data']['data'] )
+        for ( var num in result['data']['parameters'] )
         {
-            HALFiles.push( result['config_data']['data'][num]['values']['value'] );
+            HALFiles.push( result['data']['parameters'][num]['values']['value'] );
         }
         HALFiles.sort();
         HALSetupUpdateSectionMenus();
     } else if ( result['id'] == 'HALSetupData' )
     {
-        HALCodeMirror.setValue( (result['hal_data']) );
+        HALCodeMirror.setValue( (result['data']) );
         HALSetupTextNotEdited();
     } else if ( result['id'] == "HALWriteData")
         alert("Data sent.  Server replied: " + result["code"].substring(1));
@@ -867,7 +871,7 @@ function HALSetupMenuClick( file_name )
         if (false == confirm('Are you sure you want to discard your changes? '))
             return;
     
-    ws.send( JSON.stringify({ "id":"HALSetupData", "command":"get_hal_file", "filename":file_name }) ) ;
+    ws.send( JSON.stringify({ "id":"HALSetupData", "command":"get", "name":"halfile", "filename":file_name }) ) ;
     HALSetupCurrentFile = file_name;
     
     // move the current_selection to the new menu item.
