@@ -41,7 +41,6 @@ import hashlib
 import base64
 #import rpdb2
 import socket
-from datetime import datetime
 import time
 from threading import Thread, Lock
 import fcntl
@@ -49,9 +48,12 @@ import signal
 import select
 import glob
 from random import random
+from time import strftime
 
 UpdateStatusPollPeriodInMilliSeconds = 50
 UpdateHALPollPeriodInMilliSeconds = 100
+UpdateErrorPollPeriodInMilliseconds = 25
+
 eps = float(0.000001)
 
 main_loop = tornado.ioloop.IOLoop.instance()
@@ -65,12 +67,15 @@ MAX_BACKPLOT_LINES=50000
 
 instance_number = 0
 
+lastLCNCerror = ""
+
 # *****************************************************
 # Class to poll linuxcnc for status.  Other classes can request to be notified
 # when a poll happens with the add/del_observer methods
 # *****************************************************
 class LinuxCNCStatusPoller(object):
     def __init__(self, main_loop, UpdateStatusPollPeriodInMilliSeconds):
+        global lastLCNCerror
         # open communications with linuxcnc
         self.linuxcnc_status = linuxcnc.stat()
         try:
@@ -78,10 +83,19 @@ class LinuxCNCStatusPoller(object):
             self.linuxcnc_is_alive = True
         except:
             self.linuxcnc_is_alive = False
+
+        self.linuxcnc_errors = linuxcnc.error_channel()
+        lastLCNCerror = ""
+        self.errorid = 0
+            
         # begin the poll-update loop of the linuxcnc system
         self.scheduler = tornado.ioloop.PeriodicCallback( self.poll_update, UpdateStatusPollPeriodInMilliSeconds, io_loop=main_loop )
         self.scheduler.start()
-       
+
+        # begin the poll-update loop of the linuxcnc system
+        self.scheduler_errors = tornado.ioloop.PeriodicCallback( self.poll_update_errors, UpdateErrorPollPeriodInMilliseconds, io_loop=main_loop )
+        self.scheduler_errors.start()
+
         # register listeners
         self.observers = []
         self.hal_observers = []
@@ -175,6 +189,26 @@ class LinuxCNCStatusPoller(object):
         self.hal_thread = Thread(target = hal_poll_thread, args=(self,))
         self.hal_thread.start()
 
+    def poll_update_errors(self):
+        global lastLCNCerror
+        
+        if ( (self.linuxcnc_is_alive is False) or (self.linuxcnc_status is None) ):
+            self.linuxcnc_errors = linuxcnc.error_channel()
+
+        try:    
+            error = self.linuxcnc_errors.poll()
+
+            if error:
+                kind, text = error
+                if kind in (linuxcnc.NML_ERROR, linuxcnc.OPERATOR_ERROR):
+                    typus = "error"
+                else:
+                    typus = "info"
+                lastLCNCerror = { "kind":kind, "type":typus, "text":text, "time":strftime("%Y-%m-%d %H:%M:%S"), "id":self.errorid }
+
+                self.errorid = self.errorid + 1 
+        except:
+            pass
 
     def poll_update(self):
         global linuxcnc_command
@@ -211,7 +245,7 @@ LINUXCNCSTATUS = LinuxCNCStatusPoller(main_loop, UpdateStatusPollPeriodInMilliSe
 # *****************************************************
 class StatusItem( object ):
 
-    def __init__( self, name=None, valtype='', help='', watchable=True, isarray=False, arraylen=0, requiresLinuxCNCUp=True ):
+    def __init__( self, name=None, valtype='', help='', watchable=True, isarray=False, arraylen=0, requiresLinuxCNCUp=True, coreLinuxCNCVariable=True ):
         self.name = name
         self.valtype = valtype
         self.help = help
@@ -219,6 +253,7 @@ class StatusItem( object ):
         self.arraylength = arraylen
         self.watchable = watchable
         self.requiresLinuxCNCUp = requiresLinuxCNCUp
+        self.coreLinuxCNCVariable = coreLinuxCNCVariable
 
     @staticmethod
     def from_name( name ):
@@ -400,47 +435,56 @@ class StatusItem( object ):
 
     # called in on_new_poll to update the current value of a status item
     def get_cur_status_value( self, linuxcnc_status_poller, item_index, command_dict ):
+        global lastLCNCerror
         ret = { "code":LinuxCNCServerCommand.REPLY_COMMAND_OK, "data":"" } 
         try:
             if (not linuxcnc_status_poller.linuxcnc_is_alive and self.requiresLinuxCNCUp ):
-                return 
-            if (self.name.find('halpin_') is 0):
-                linuxcnc_status_poller.hal_mutex.acquire()
-                try:
-                    ret['data'] = linuxcnc_status_poller.pin_dict.get( self.name[7:], LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER )
-                    if ( ret['data'] == LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER ):
-                        ret['code'] = ret['data']
-                finally:
-                    linuxcnc_status_poller.hal_mutex.release()
-            elif (self.name.find('halsig_') is 0):
-                linuxcnc_status_poller.hal_mutex.acquire()
-                try:
-                    ret['data'] = linuxcnc_status_poller.sig_dict.get( self.name[7:], LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER )
-                    if ( ret['data'] == LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER ):
-                        ret['code'] = ret['data']
-                finally:
-                    linuxcnc_status_poller.hal_mutex.release()
-            elif (self.name.find('backplot') is 0):
-                ret['data'] = self.backplot()
-            elif (self.name == 'ini_file_name'):
-                ret['data'] = INI_FILENAME
-            elif (self.name == 'file_content'):
-                ret['data'] = self.read_gcode_file(linuxcnc_status_poller.linuxcnc_status.file)
-            elif (self.name == 'ls'):
-                ret = self.list_gcode_files( command_dict.get("directory", None) )
-            elif (self.name == 'halgraph'):
-                ret = self.get_halgraph()
-            elif (self.name == 'config'):
-                ret = StatusItem.get_ini_data()
-            elif (self.name == 'config_item'):
-                ret = StatusItem.get_ini_data_item(command_dict.get("section", ''),command_dict.get("parameter", ''))
-            elif (self.name == 'halfile'):
-                ret = self.get_hal_file( command_dict.get("filename", '') )
-            elif (self.isarray):
-                ret['data'] = (linuxcnc_status_poller.linuxcnc_status.__getattribute__( self.name ))[item_index]
+                return
+
+            if (not self.coreLinuxCNCVariable):
+
+                # these are the "special" variables, not using the LinuxCNC status object
+                if (self.name.find('halpin_') is 0):
+                    linuxcnc_status_poller.hal_mutex.acquire()
+                    try:
+                        ret['data'] = linuxcnc_status_poller.pin_dict.get( self.name[7:], LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER )
+                        if ( ret['data'] == LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER ):
+                            ret['code'] = ret['data']
+                    finally:
+                        linuxcnc_status_poller.hal_mutex.release()
+                elif (self.name.find('halsig_') is 0):
+                    linuxcnc_status_poller.hal_mutex.acquire()
+                    try:
+                        ret['data'] = linuxcnc_status_poller.sig_dict.get( self.name[7:], LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER )
+                        if ( ret['data'] == LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER ):
+                            ret['code'] = ret['data']
+                    finally:
+                        linuxcnc_status_poller.hal_mutex.release()
+                elif (self.name.find('backplot') is 0):
+                    ret['data'] = self.backplot()
+                elif (self.name == 'ini_file_name'):
+                    ret['data'] = INI_FILENAME
+                elif (self.name == 'file_content'):
+                    ret['data'] = self.read_gcode_file(linuxcnc_status_poller.linuxcnc_status.file)
+                elif (self.name == 'ls'):
+                    ret = self.list_gcode_files( command_dict.get("directory", None) )
+                elif (self.name == 'halgraph'):
+                    ret = self.get_halgraph()
+                elif (self.name == 'config'):
+                    ret = StatusItem.get_ini_data()
+                elif (self.name == 'config_item'):
+                    ret = StatusItem.get_ini_data_item(command_dict.get("section", ''),command_dict.get("parameter", ''))
+                elif (self.name == 'halfile'):
+                    ret = self.get_hal_file( command_dict.get("filename", '') )
+                elif (self.name == 'error'):
+                    ret['data'] = lastLCNCerror
             else:
-                ret['data'] = linuxcnc_status_poller.linuxcnc_status.__getattribute__( self.name )
-        except:
+                # Variables that use the LinuxCNC status poller
+                if (self.isarray):
+                    ret['data'] = (linuxcnc_status_poller.linuxcnc_status.__getattribute__( self.name ))[item_index]
+                else:
+                    ret['data'] = linuxcnc_status_poller.linuxcnc_status.__getattribute__( self.name )
+        except Exception as ex :
             ret['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
             ret['data'] = ''
         return ret
@@ -493,7 +537,7 @@ StatusItem( name='feed_hold_enabled',        watchable=True, valtype='int' ,    
 StatusItem( name='feed_override_enabled',    watchable=True, valtype='int' ,    help='enable flag for feed override' ).register_in_dict( StatusItems )
 StatusItem( name='feedrate',                 watchable=True, valtype='float' ,  help='current feedrate' ).register_in_dict( StatusItems )
 StatusItem( name='file',                     watchable=True, valtype='string' , help='currently executing gcode file' ).register_in_dict( StatusItems )
-StatusItem( name='file_content',             watchable=False,valtype='string' , help='currently executing gcode file contents' ).register_in_dict( StatusItems )
+StatusItem( name='file_content',             coreLinuxCNCVariable=False, watchable=False,valtype='string' , help='currently executing gcode file contents' ).register_in_dict( StatusItems )
 StatusItem( name='flood',                    watchable=True, valtype='int' ,    help='flood enabled' ).register_in_dict( StatusItems )
 StatusItem( name='g5x_index',                watchable=True, valtype='int' ,    help='currently active coordinate system, G54=0, G55=1 etc.' ).register_in_dict( StatusItems )
 StatusItem( name='g5x_offset',               watchable=True, valtype='float[]', help='offset of the currently active coordinate system, a pose' ).register_in_dict( StatusItems )
@@ -547,14 +591,16 @@ StatusItem( name='task_state',               watchable=True, valtype='int' ,    
 StatusItem( name='tool_in_spindle',          watchable=True, valtype='int' ,    help='current tool number' ).register_in_dict( StatusItems )
 StatusItem( name='tool_offset',              watchable=True, valtype='float' ,  help='offset values of the current tool' ).register_in_dict( StatusItems )
 StatusItem( name='velocity',                 watchable=True, valtype='float' ,  help='default velocity, float. reflects [TRAJ]DEFAULT_VELOCITY' ).register_in_dict( StatusItems )
-StatusItem( name='ls',                       watchable=True, valtype='string[]',help='Get a list of gcode files.  Optionally specify directory with "directory":"string", or default directory will be used.  Only *.ngc files will be listed.' ).register_in_dict( StatusItems )
 
-StatusItem( name='backplot',                 watchable=False, valtype='string[]',help='Backplot information.  Potentially very large list of lines.' ).register_in_dict( StatusItems )
-StatusItem( name='config',                   watchable=False, valtype='dict',    help='Config (ini) file contents.', requiresLinuxCNCUp=False  ).register_in_dict( StatusItems )
-StatusItem( name='config_item',              watchable=False, valtype='dict',    help='Specific section/name from the config file.  Pass in section=??? and name=???.', requiresLinuxCNCUp=False  ).register_in_dict( StatusItems )
-StatusItem( name='halfile',                  watchable=False, valtype='string',  help='Contents of a hal file.  Pass in filename=??? to specify the hal file name', requiresLinuxCNCUp=False ).register_in_dict( StatusItems )
-StatusItem( name='halgraph',                 watchable=False, valtype='string',  help='Filename of the halgraph generated from the currently running instance of LinuxCNC.  Filename will be "halgraph.svg"' ).register_in_dict( StatusItems )
-StatusItem( name='ini_file_name',            watchable=True,  valtype='string',  help='INI file to use for next LinuxCNC start.', requiresLinuxCNCUp=False ).register_in_dict( StatusItems )
+StatusItem( name='ls',                       coreLinuxCNCVariable=False, watchable=True, valtype='string[]',help='Get a list of gcode files.  Optionally specify directory with "directory":"string", or default directory will be used.  Only *.ngc files will be listed.' ).register_in_dict( StatusItems )
+StatusItem( name='backplot',                 coreLinuxCNCVariable=False, watchable=False, valtype='string[]',help='Backplot information.  Potentially very large list of lines.' ).register_in_dict( StatusItems )
+StatusItem( name='config',                   coreLinuxCNCVariable=False, watchable=False, valtype='dict',    help='Config (ini) file contents.', requiresLinuxCNCUp=False  ).register_in_dict( StatusItems )
+StatusItem( name='config_item',              coreLinuxCNCVariable=False, watchable=False, valtype='dict',    help='Specific section/name from the config file.  Pass in section=??? and name=???.', requiresLinuxCNCUp=False  ).register_in_dict( StatusItems )
+StatusItem( name='halfile',                  coreLinuxCNCVariable=False, watchable=False, valtype='string',  help='Contents of a hal file.  Pass in filename=??? to specify the hal file name', requiresLinuxCNCUp=False ).register_in_dict( StatusItems )
+StatusItem( name='halgraph',                 coreLinuxCNCVariable=False, watchable=False, valtype='string',  help='Filename of the halgraph generated from the currently running instance of LinuxCNC.  Filename will be "halgraph.svg"' ).register_in_dict( StatusItems )
+StatusItem( name='ini_file_name',            coreLinuxCNCVariable=False, watchable=True,  valtype='string',  help='INI file to use for next LinuxCNC start.', requiresLinuxCNCUp=False ).register_in_dict( StatusItems )
+
+StatusItem( name='error',                    coreLinuxCNCVariable=False, watchable=True,  valtype='dict',    help='Error queue.' ).register_in_dict( StatusItems )
 
 # Array Status items
 StatusItem( name='tool_table',               watchable=True, valtype='float[]', help='list of tool entries. Each entry is a sequence of the following fields: id, xoffset, yoffset, zoffset, aoffset, boffset, coffset, uoffset, voffset, woffset, diameter, frontangle, backangle, orientation', isarray=True, arraylen=tool_table_length ).register_in_dict( StatusItems )
@@ -684,7 +730,8 @@ class CommandItem( object ):
 
     def execute( self, passed_command_dict ):
         global INI_FILENAME
-        global INI_FILE_PATH        
+        global INI_FILE_PATH
+        global lastLCNCerror
         try:
             paramcnt = 0
             params = []
@@ -737,6 +784,8 @@ class CommandItem( object ):
                     reply['code'] = LinuxCNCServerCommand.REPLY_COMMAND_OK
                 elif (self.name == 'config'): 
                     reply = self.put_ini_data(passed_command_dict)
+                elif (self.name == 'clear_error'):
+                    lastLCNCerror = ""
                 elif (self.name == 'halfile'):
                     reply = self.put_hal_file( filename=passed_command_dict['filename'].strip(), data=passed_command_dict['data'] )
                 elif (self.name == 'shutdown'):
@@ -800,6 +849,7 @@ CommandItem( name='wait_complete',           paramTypes=[ {'pname':'timeout', 'p
 
 CommandItem( name='config',                  paramTypes=[ {'pname':'data', 'ptype':'dict', 'optional':False} ],       help='Overwrite the config file.  Parameter is a dictionary with the same format as returned from "get config"', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
 CommandItem( name='halfile',                 paramTypes=[ {'pname':'filename', 'ptype':'string', 'optional':False}, {'pname':'data', 'ptype':'string', 'optional':False} ],       help='Overwrite the specified file.  Parameter is a filename, then a string containing the new hal file contents.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
+CommandItem( name='clear_error',             paramTypes=[  ],       help='Clear the last error condition.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
 
 CommandItem( name='shutdown',                paramTypes=[ ],       help='Shutdown LinuxCNC system.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
 CommandItem( name='startup',                paramTypes=[ ],        help='Start LinuxCNC system.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
@@ -1202,7 +1252,7 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
 
     def on_message(self, message): 
         global LINUXCNCSTATUS
-        #print "GOT: " + message
+        print "GOT: " + message
         if (self.user_validated):
             try:
                 reply = LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_message=message ).execute()
@@ -1225,7 +1275,7 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
             except:
                 self.write_message(json.dumps( { 'id':id, 'code':'?User not logged in', 'data':'?User not logged in'}, cls=StatusItemEncoder ))
             
-
+  
     def send_message( self, message_to_send ):
         self.write_message( message_to_send )
         #if (message_to_send.find("actual_position") < 0):
