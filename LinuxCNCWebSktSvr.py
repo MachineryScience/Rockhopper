@@ -123,14 +123,6 @@ class LinuxCNCStatusPoller(object):
     def clear_all(self, matching_connection):
         self.obervers = []
 
-    def linuxcnc_alive_check( self ):
-        test = linuxcnc.stat()
-        try:
-            test.poll()
-            self.linuxcnc_is_alive = True
-        except:
-            self.linuxcnc_is_alive = False
-
     def hal_poll_init(self):
 
         # halcmd can take 200ms or more to run, so run poll updates in a thread so as not to slow the server
@@ -138,6 +130,7 @@ class LinuxCNCStatusPoller(object):
         def hal_poll_thread(self):
             global instance_number
             myinstance = instance_number
+
             while (myinstance == instance_number):
                 
                 # first, check if linuxcnc is running at all
@@ -147,6 +140,9 @@ class LinuxCNCStatusPoller(object):
                         self.linuxcnc_is_alive = False
                         self.pin_dict = {}
                         self.sig_dict = {}
+                        self.linuxcnc_errors = None
+                        self.linuxcnc_status = None
+                        linuxcnc_command = None
                     finally:
                         self.hal_mutex.release()
                     time.sleep(UpdateHALPollPeriodInMilliSeconds/1000.0)
@@ -179,9 +175,10 @@ class LinuxCNCStatusPoller(object):
                             self.pin_dict[ p[4] ] = p[3]
                 finally:
                     self.hal_mutex.release()
-                    
+
                 # before starting the next check, sleep a little so we don't use all the CPU
                 time.sleep(UpdateHALPollPeriodInMilliSeconds/1000.0)
+            print "HAL Monitor exiting... ",myinstance, instance_number
 
         #Main part of hal_poll_init:
         # Create a thread for checking the HAL pins and sigs
@@ -191,10 +188,12 @@ class LinuxCNCStatusPoller(object):
 
     def poll_update_errors(self):
         global lastLCNCerror
-        
-        if ( (self.linuxcnc_is_alive is False) or (self.linuxcnc_status is None) ):
-            self.linuxcnc_errors = linuxcnc.error_channel()
 
+        if (self.linuxcnc_is_alive is False):
+            return
+        
+        if ( (self.linuxcnc_status is None) ):
+            self.linuxcnc_errors = linuxcnc.error_channel()
         try:    
             error = self.linuxcnc_errors.poll()
 
@@ -214,16 +213,15 @@ class LinuxCNCStatusPoller(object):
         global linuxcnc_command
         
         # update linuxcnc status
-        if ( (self.linuxcnc_is_alive is False) or (self.linuxcnc_status is None) ):
-            self.linuxcnc_status = linuxcnc.stat()
-            linuxcnc_command = linuxcnc.command()
-        try:
-            self.linuxcnc_status.poll()
-            self.linuxcnc_is_alive = True
-        except:
-            self.linuxcnc_status = None
-            linuxcnc_command = None
-            self.linuxcnc_is_alive = False
+        if (self.linuxcnc_is_alive):
+            try:
+                if ( self.linuxcnc_status is None ):
+                    self.linuxcnc_status = linuxcnc.stat()
+                    linuxcnc_command = linuxcnc.command()
+                self.linuxcnc_status.poll()
+            except:
+                self.linuxcnc_status = None
+                linuxcnc_command = None
 
         # notify all obervers of new status data poll    
         for observer in self.observers:
@@ -236,7 +234,7 @@ class LinuxCNCStatusPoller(object):
 # *****************************************************
 # Global LinuxCNCStatus Polling Object
 # *****************************************************
-LINUXCNCSTATUS = LinuxCNCStatusPoller(main_loop, UpdateStatusPollPeriodInMilliSeconds)
+LINUXCNCSTATUS = []
 
     
 
@@ -438,8 +436,16 @@ class StatusItem( object ):
         global lastLCNCerror
         ret = { "code":LinuxCNCServerCommand.REPLY_COMMAND_OK, "data":"" } 
         try:
+            if (self.name == 'running'):
+                if linuxcnc_status_poller.linuxcnc_is_alive:
+                    ret['data'] = 1
+                else:
+                    ret['data'] = 0
+                return ret
+                
             if (not linuxcnc_status_poller.linuxcnc_is_alive and self.requiresLinuxCNCUp ):
-                return
+                ret = { "code":LinuxCNCServerCommand.REPLY_LINUXCNC_NOT_RUNNING, "data":"Server is not running." }
+                return ret
 
             if (not self.coreLinuxCNCVariable):
 
@@ -601,6 +607,7 @@ StatusItem( name='halgraph',                 coreLinuxCNCVariable=False, watchab
 StatusItem( name='ini_file_name',            coreLinuxCNCVariable=False, watchable=True,  valtype='string',  help='INI file to use for next LinuxCNC start.', requiresLinuxCNCUp=False ).register_in_dict( StatusItems )
 
 StatusItem( name='error',                    coreLinuxCNCVariable=False, watchable=True,  valtype='dict',    help='Error queue.' ).register_in_dict( StatusItems )
+StatusItem( name='running',                  coreLinuxCNCVariable=False, watchable=True,  valtype='int',     help='True if linuxcnc is up and running.', requiresLinuxCNCUp=False ).register_in_dict( StatusItems )
 
 # Array Status items
 StatusItem( name='tool_table',               watchable=True, valtype='float[]', help='list of tool entries. Each entry is a sequence of the following fields: id, xoffset, yoffset, zoffset, aoffset, boffset, coffset, uoffset, voffset, woffset, diameter, frontangle, backangle, orientation', isarray=True, arraylen=tool_table_length ).register_in_dict( StatusItems )
@@ -728,15 +735,17 @@ class CommandItem( object ):
         subprocess.Popen(['linuxcnc', INI_FILENAME], stderr=subprocess.STDOUT )
         return {'code':LinuxCNCServerCommand.REPLY_COMMAND_OK}
 
-    def execute( self, passed_command_dict ):
+    def execute( self, passed_command_dict, linuxcnc_status_poller ):
         global INI_FILENAME
         global INI_FILE_PATH
         global lastLCNCerror
+        global linuxcnc_command
+        
         try:
             paramcnt = 0
             params = []
 
-            if linuxcnc_command is None and not (self.type == CommandItem.SYSTEM):
+            if ((linuxcnc_command is None or (not linuxcnc_status_poller.linuxcnc_is_alive)) and not (self.type == CommandItem.SYSTEM)):
                 return { 'code':LinuxCNCServerCommand.REPLY_LINUXCNC_NOT_RUNNING } 
             
             for paramDesc in self.paramTypes:
@@ -1123,21 +1132,23 @@ class LinuxCNCServerCommand( object ):
 
     # update on a watched variable 
     def on_new_poll( self ):
-        if (not self.statusitem.watchable):
-            self.linuxcnc_status_poller.del_observer( self.on_new_poll )
-            return
-        if self.server_command_handler.isclosed:
-            self.linuxcnc_status_poller.del_observer( self.on_new_poll )
-            return
-        newval = self.statusitem.get_cur_status_value(self.linuxcnc_status_poller, self.item_index, self.commandDict )
-        if (self.replyval['data'] != newval['data']):
-            self.replyval = newval
-            self.server_command_handler.send_message( self.form_reply() )
-            if ( newval['code'] != LinuxCNCServerCommand.REPLY_COMMAND_OK ):
+        try:
+            if (not self.statusitem.watchable):
                 self.linuxcnc_status_poller.del_observer( self.on_new_poll )
+                return
+            if self.server_command_handler.isclosed:
+                self.linuxcnc_status_poller.del_observer( self.on_new_poll )
+                return
+            newval = self.statusitem.get_cur_status_value(self.linuxcnc_status_poller, self.item_index, self.commandDict )
+            if (self.replyval['data'] != newval['data']):
+                self.replyval = newval
+                self.server_command_handler.send_message( self.form_reply() )
+                if ( newval['code'] != LinuxCNCServerCommand.REPLY_COMMAND_OK ):
+                    self.linuxcnc_status_poller.del_observer( self.on_new_poll )
+        except:
+            pass
 
 
-        
     # this is the main interface to a LinuxCNCServerCommand.  This determines what the command is, and executes it.
     # Callbacks are made to the self.server_command_handler to write output to the websocket
     # The self.linuxcnc_status_poller is used to poll the linuxcnc status, which is used to watch status items and monitor for changes
@@ -1160,7 +1171,6 @@ class LinuxCNCServerCommand( object ):
                     self.replyval = self.statusitem.get_cur_status_value(self.linuxcnc_status_poller, self.item_index, self.commandDict )
             except:
                 self.replyval['code'] = LinuxCNCServerCommand.REPLY_NAK
-            
 
         elif (self.command == 'watch'):
             try:
@@ -1171,15 +1181,15 @@ class LinuxCNCServerCommand( object ):
                 if (self.statusitem is None):
                     self.replyval['code'] = LinuxCNCServerCommand.REPLY_STATUS_NOT_FOUND
                 else:
-                    
                     if ( self.statusitem.isarray ):
                         self.item_index = self.commandDict['index']
                         self.replyval['index'] = self.item_index;
                     self.replyval = self.statusitem.get_cur_status_value(self.linuxcnc_status_poller, self.item_index, self.commandDict )
-                    if (self.replyval['code'] == LinuxCNCServerCommand.REPLY_COMMAND_OK):
+                    if (self.replyval['code'] == LinuxCNCServerCommand.REPLY_COMMAND_OK ):
                         self.linuxcnc_status_poller.add_observer( self.on_new_poll )
             except:
-                self.replyval = LinuxCNCServerCommand.REPLY_NAK
+                self.replyval['code'] = LinuxCNCServerCommand.REPLY_NAK
+            
 
         elif (self.command == 'list_get'):
             try:
@@ -1201,7 +1211,7 @@ class LinuxCNCServerCommand( object ):
                 self.replyval['code'] = LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER
                 self.LinuxCNCCommandName = self.commandDict['name']
                 self.commanditem = self.CommandItems.get( self.LinuxCNCCommandName )
-                self.replyval = self.commanditem.execute( self.commandDict )
+                self.replyval = self.commanditem.execute( self.commandDict, self.linuxcnc_status_poller )
             except:
                 logging.debug( 'PUT Command: ERROR'  )
                 
@@ -1259,7 +1269,7 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
                 self.write_message(reply)
                 #print "Reply: " + reply
             except Exception as ex:
-                print ex
+                print "1:", ex
         else:
             try:
                 global userdict
@@ -1278,6 +1288,7 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
   
     def send_message( self, message_to_send ):
         self.write_message( message_to_send )
+
         #if (message_to_send.find("actual_position") < 0):
             #print "SEND: " + message_to_send
 
@@ -1513,10 +1524,14 @@ def main():
     global INI_FILE_PATH
     global userdict
     global instance_number
-    instance_number = random()
+    global LINUXCNCSTATUS
+
     def fn():
         instance_number = random()
         print "Webserver reloading..."
+
+    instance_number = random()
+    LINUXCNCSTATUS = LinuxCNCStatusPoller(main_loop, UpdateStatusPollPeriodInMilliSeconds)
 
     if len(sys.argv) < 2:
         sys.exit('Usage: LinuxCNCWebSktSvr.py <LinuxCNC_INI_file_name>')
@@ -1524,8 +1539,7 @@ def main():
     [INI_FILE_PATH, x] = os.path.split( INI_FILENAME )
 
     logging.basicConfig(filename=os.path.join(application_path,'linuxcnc_webserver.log'),format='%(asctime)sZ pid:%(process)s module:%(module)s %(message)s', level=logging.ERROR)
-    
-
+ 
     #rpdb2.start_embedded_debugger("password")
 
     logging.info("Reading user list...")

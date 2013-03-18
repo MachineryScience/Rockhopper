@@ -955,7 +955,7 @@ function SystemSocketOpen()
     document.getElementById("Command_Reply").innerHTML = "Server Connection Initiated"
 
    // Get a list from the server of all linuxcnc status items
-    ws.send( JSON.stringify({ "id":"STATUS_CHECK", "command":"watch", "name":"estop" }) ) ;
+    ws.send( JSON.stringify({ "id":"STATUS_CHECK", "command":"watch", "name":"running" }) ) ;
     ws.send( JSON.stringify({ "id":"INI_MONITOR", "command":"watch", "name":"ini_file_name" }) ) ;
 }
 
@@ -965,7 +965,7 @@ function SystemSocketMessageHandler(evt)
     
     if ( result["id"] == "STATUS_CHECK" )
     {
-        if (result["data"][0] != "?")
+        if (result["data"] == 1)
             document.getElementById("LinuxCNCRunStatus").innerHTML = "Running";
         else
             document.getElementById("LinuxCNCRunStatus").innerHTML = "Down";
