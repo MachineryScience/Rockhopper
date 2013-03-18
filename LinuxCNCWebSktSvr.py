@@ -1115,7 +1115,7 @@ class LinuxCNCServerCommand( object ):
     def form_reply( self ):
         self.replyval['id'] = self.commandID
         if ( 'code' not in self.replyval ):
-            self.replyval['code'] = REPLY_NAK
+            self.replyval['code'] = LinuxCNCServerCommand.REPLY_NAK
         if ('data' not in self.replyval):
                 self.replyval['data'] = self.replyval['code']
         val = json.dumps( self.replyval, cls=StatusItemEncoder )
@@ -1252,7 +1252,7 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
 
     def on_message(self, message): 
         global LINUXCNCSTATUS
-        print "GOT: " + message
+        #print "GOT: " + message
         if (self.user_validated):
             try:
                 reply = LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_message=message ).execute()
