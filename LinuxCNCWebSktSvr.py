@@ -740,7 +740,7 @@ class CommandItem( object ):
         global INI_FILE_PATH
         global lastLCNCerror
         global linuxcnc_command
-        
+
         try:
             paramcnt = 0
             params = []
@@ -861,7 +861,7 @@ CommandItem( name='halfile',                 paramTypes=[ {'pname':'filename', '
 CommandItem( name='clear_error',             paramTypes=[  ],       help='Clear the last error condition.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
 
 CommandItem( name='shutdown',                paramTypes=[ ],       help='Shutdown LinuxCNC system.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
-CommandItem( name='startup',                paramTypes=[ ],        help='Start LinuxCNC system.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
+CommandItem( name='startup',                 paramTypes=[ ],       help='Start LinuxCNC system.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
 
 # *****************************************************
 # Config file help
@@ -1225,16 +1225,6 @@ class LinuxCNCServerCommand( object ):
                 self.replyval['elapsed_time'] = HAL_INTERFACE.time_elapsed
             except:
                 self.replyval['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
-        elif (self.command == 'shutdown'):
-            try:
-                self.replyval = self.shutdown_linuxcnc()  
-            except:
-                self.replyval = {'code':LinuxCNCServerCommand.REPLY_NAK}
-        elif (self.command == 'startup'):
-            try:
-                self.replyval = self.start_linuxcnc()  
-            except:
-                self.replyval = {'code':LinuxCNCServerCommand.REPLY_NAK}
             
         # convert to JSON, and return the reply string
         return self.form_reply()
@@ -1271,7 +1261,7 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
             except Exception as ex:
                 print "1:", ex
         else:
-            try:
+            try: 
                 global userdict
                 commandDict = json.loads( message )
                 id = commandDict.get('id','Login').strip()

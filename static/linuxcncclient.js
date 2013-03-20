@@ -821,7 +821,7 @@ function HALSetupSocketMessageHandler(evt)
         {
             HALFiles.push( result['data']['parameters'][num]['values']['value'] );
         }
-        ws.send( JSON.stringify({ "id":"HALSetup2", "command":"get", "name":"config_item", "section":"HAL", "name":"POSTGUI_HALFILE" }) ) ;
+        ws.send( JSON.stringify({ "id":"HALSetup2", "command":"get", "name":"config_item", "section":"HAL", "parameter":"POSTGUI_HALFILE" }) ) ;
     } else if ( result['id'] == 'HALSetup2' )
     {    
         for ( var num in result['data']['parameters'] )
@@ -829,7 +829,7 @@ function HALSetupSocketMessageHandler(evt)
             HALFiles.push( result['data']['parameters'][num]['values']['value'] );
         }
         
-        ws.send( JSON.stringify({ "id":"HALSetup3", "command":"get", "name":"config_item", "section":"HAL", "name":"SHUTDOWN" }) ) ;
+        ws.send( JSON.stringify({ "id":"HALSetup3", "command":"get", "name":"config_item", "section":"HAL", "parameter":"SHUTDOWN" }) ) ;
 
     } else if ( result['id'] == 'HALSetup3' )
     {    
@@ -981,12 +981,12 @@ function SystemSocketMessageHandler(evt)
 
 function SystemShutdown()
 {
-    ws.send( JSON.stringify({ "id":"SystemShutdown", "command":"shutdown" }) ) ;
+    ws.send( JSON.stringify({ "id":"SystemShutdown", "command":"put", "name":"shutdown" }) ) ;
 }
 
 function SystemStart()
 {
-    ws.send( JSON.stringify({ "id":"SystemStart", "command":"startup" }) ) ;
+    ws.send( JSON.stringify({ "id":"SystemStart", "command":"put", "name":"startup" }) ) ;
 }
 
 function SystemSetINI()
