@@ -13,7 +13,7 @@
 # WebSocket using JSON formatted commands and replies.
 #
 #
-# *****************************************************
+# ***************************************************** 
 # *****************************************************
 #
 # Copyright 2012, 2013 Machinery Science, LLC
@@ -49,7 +49,8 @@ import select
 import glob
 from random import random
 from time import strftime
-
+from optparse import OptionParser
+    
 UpdateStatusPollPeriodInMilliSeconds = 50
 UpdateHALPollPeriodInMilliSeconds = 100
 UpdateErrorPollPeriodInMilliseconds = 25
@@ -68,6 +69,8 @@ MAX_BACKPLOT_LINES=50000
 instance_number = 0
 
 lastLCNCerror = ""
+
+options = ""
 
 # *****************************************************
 # Class to poll linuxcnc for status.  Other classes can request to be notified
@@ -1252,12 +1255,14 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
 
     def on_message(self, message): 
         global LINUXCNCSTATUS
-        #print "GOT: " + message
+        if int(options.verbose) > 2:
+            print "GOT: " + message
         if (self.user_validated):
             try:
                 reply = LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_message=message ).execute()
                 self.write_message(reply)
-                #print "Reply: " + reply
+                if int(options.verbose) > 3:
+                    print "Reply: " + reply
             except Exception as ex:
                 print "1:", ex
         else:
@@ -1278,9 +1283,9 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
   
     def send_message( self, message_to_send ):
         self.write_message( message_to_send )
-
-        #if (message_to_send.find("actual_position") < 0):
-            #print "SEND: " + message_to_send
+        if int(options.verbose) > 4:
+            if (message_to_send.find("actual_position") < 0):
+                print "SEND: " + message_to_send
 
     def on_close(self):
         self.isclosed = True
@@ -1470,11 +1475,8 @@ class MainHandler(tornado.web.RequestHandler):
         if (arg.upper() in [ '', 'INDEX.HTML', 'INDEX.HTM', 'INDEX']):
             self.render( 'LinuxCNCConfig.html' )
         else:
-            self.render( arg )        
+            self.render( arg ) 
 
-
-
-  
 # ********************************
 # ********************************
 #  Initialize global variables
@@ -1515,17 +1517,30 @@ def main():
     global userdict
     global instance_number
     global LINUXCNCSTATUS
+    global options
 
     def fn():
         instance_number = random()
         print "Webserver reloading..."
 
+
+
+    parser = OptionParser()
+    parser.add_option("-v", "--verbose", dest="verbose", default=0,
+                      help="Verbosity level.  Default to 0 for quiet.  Set to 5 for max.")
+
+    (options, args) = parser.parse_args()
+
+    if ( int(options.verbose) > 4):
+        print "Options: ", options
+        print "Arguments: ", args[0]
+
     instance_number = random()
     LINUXCNCSTATUS = LinuxCNCStatusPoller(main_loop, UpdateStatusPollPeriodInMilliSeconds)
 
-    if len(sys.argv) < 2:
+    if len(args) < 1:
         sys.exit('Usage: LinuxCNCWebSktSvr.py <LinuxCNC_INI_file_name>')
-    INI_FILENAME = sys.argv[1]
+    INI_FILENAME = args[0]
     [INI_FILE_PATH, x] = os.path.split( INI_FILENAME )
 
     logging.basicConfig(filename=os.path.join(application_path,'linuxcnc_webserver.log'),format='%(asctime)sZ pid:%(process)s module:%(module)s %(message)s', level=logging.ERROR)
