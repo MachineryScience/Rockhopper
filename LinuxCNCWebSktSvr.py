@@ -64,6 +64,8 @@ linuxcnc_command = linuxcnc.command()
 INI_FILENAME = ''
 INI_FILE_PATH = ''
 
+CONFIG_FILENAME = 'CLIENT_CONFIG.JSON'
+
 MAX_BACKPLOT_LINES=50000
 
 instance_number = 0
@@ -373,6 +375,24 @@ class StatusItem( object ):
                     break
         return found
 
+    def get_client_config( self ):
+        global CONFIG_FILENAME
+        reply = { 'code': LinuxCNCServerCommand.REPLY_COMMAND_OK }
+        reply['data'] = ''
+
+        try:
+            fo = open( CONFIG_FILENAME, 'r' )
+            reply['data'] = fo.read()
+        except:
+            reply['data'] = ''
+        finally:
+            try:
+                fo.close()
+            except:
+                pass
+        return reply
+
+
     def get_hal_file( self, filename ): 
         global INI_FILENAME
         global INI_FILE_PATH        
@@ -411,8 +431,7 @@ class StatusItem( object ):
         try:
             if directory is None:
                 directory = "."
-                dirs = StatusITem.get_ini_data( only_section='DISPLAY', only_name='PROGRAM_PREFIX' )
-                directory = dirs['data'][0]['values']['value']
+                directory = StatusItem.get_ini_data( only_section='DISPLAY', only_name='PROGRAM_PREFIX' )['data']['parameters'][0]['values']['value']
         except:
             pass
         try:
@@ -485,6 +504,8 @@ class StatusItem( object ):
                     ret = StatusItem.get_ini_data_item(command_dict.get("section", ''),command_dict.get("parameter", ''))
                 elif (self.name == 'halfile'):
                     ret = self.get_hal_file( command_dict.get("filename", '') )
+                elif (self.name == 'client_config'):
+                    ret = self.get_client_config()
                 elif (self.name == 'error'):
                     ret['data'] = lastLCNCerror
             else:
@@ -608,6 +629,7 @@ StatusItem( name='config_item',              coreLinuxCNCVariable=False, watchab
 StatusItem( name='halfile',                  coreLinuxCNCVariable=False, watchable=False, valtype='string',  help='Contents of a hal file.  Pass in filename=??? to specify the hal file name', requiresLinuxCNCUp=False ).register_in_dict( StatusItems )
 StatusItem( name='halgraph',                 coreLinuxCNCVariable=False, watchable=False, valtype='string',  help='Filename of the halgraph generated from the currently running instance of LinuxCNC.  Filename will be "halgraph.svg"' ).register_in_dict( StatusItems )
 StatusItem( name='ini_file_name',            coreLinuxCNCVariable=False, watchable=True,  valtype='string',  help='INI file to use for next LinuxCNC start.', requiresLinuxCNCUp=False ).register_in_dict( StatusItems )
+StatusItem( name='client_config',            coreLinuxCNCVariable=False, watchable=True,  valtype='string',  help='Client Configuration.', requiresLinuxCNCUp=False ).register_in_dict( StatusItems )
 
 StatusItem( name='error',                    coreLinuxCNCVariable=False, watchable=True,  valtype='dict',    help='Error queue.' ).register_in_dict( StatusItems )
 StatusItem( name='running',                  coreLinuxCNCVariable=False, watchable=True,  valtype='int',     help='True if linuxcnc is up and running.', requiresLinuxCNCUp=False ).register_in_dict( StatusItems )
@@ -689,6 +711,53 @@ class CommandItem( object ):
                 pass
 
         return reply
+
+    def put_client_config( self, data ):
+        global CONFIG_FILENAME
+        reply = {'code':LinuxCNCServerCommand.REPLY_COMMAND_OK}
+        try:
+            fo = open( CONFIG_FILENAME, 'w' )
+            fo.write( json.dumps(data) )
+        except:
+            reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
+        finally:
+            try:
+                fo.close()
+            except:
+                reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
+        return reply
+           
+
+    def put_gcode_file( self, filename, data ):
+        global linuxcnc_command
+
+        reply = {'code':LinuxCNCServerCommand.REPLY_COMMAND_OK}
+        try:
+            
+            # strip off just the filename, if a path was given
+            # we will only look in the config directory, so we ignore path
+            [h,f] = os.path.split( filename )
+
+            path = StatusItem.get_ini_data( only_section='DISPLAY', only_name='PROGRAM_PREFIX' )['data']['parameters'][0]['values']['value']
+            
+            try:
+                fo = open( os.path.join( path, f ), 'w' )
+                fo.write(data)
+            except:
+                reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
+            finally:
+                try:
+                    fo.close()
+                except:
+                    reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
+
+            if (reply['code'] == LinuxCNCServerCommand.REPLY_COMMAND_OK):
+                (linuxcnc_command.program_open( os.path.join( path, f ) ) )
+            
+        except Exception as ex:
+            print ex
+            reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
+        return reply         
 
     # writes the specified HAL file to disk
     def put_hal_file( self, filename, data ):
@@ -799,11 +868,15 @@ class CommandItem( object ):
                 elif (self.name == 'clear_error'):
                     lastLCNCerror = ""
                 elif (self.name == 'halfile'):
-                    reply = self.put_hal_file( filename=passed_command_dict['filename'].strip(), data=passed_command_dict['data'] )
+                    reply = self.put_hal_file( filename=passed_command_dict.get('filename',passed_command_dict['0']).strip(), data=passed_command_dict.get('data', passed_command_dict.get['1']) )
                 elif (self.name == 'shutdown'):
                     reply = self.shutdown_linuxcnc()
                 elif (self.name == 'startup'):
                     reply = self.start_linuxcnc()
+                elif (self.name == 'program_upload'):
+                    reply = self.put_gcode_file(filename=passed_command_dict.get('filename',passed_command_dict['0']).strip(), data=passed_command_dict.get('data', passed_command_dict['1']))
+                elif (self.name == 'save_client_config'):
+                    reply = self.put_client_config( passed_command_dict.get('data', passed_command_dict.get['0']) );
                 else:
                     reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
                 return reply
@@ -837,7 +910,8 @@ CommandItem( name='mdi',                     paramTypes=[ {'pname':'mdi', 'ptype
 CommandItem( name='mist',                    paramTypes=[ {'pname':'onoff', 'ptype':'lookup', 'lookup-vals':['MIST_ON','MIST_OFF'], 'optional':False} ],       help='turn on/off mist.  Legal values: MIST_ON, MIST_OFF' ).register_in_dict( CommandItems )
 CommandItem( name='mode',                    paramTypes=[ {'pname':'mode', 'ptype':'lookup', 'lookup-vals':['MODE_AUTO','MODE_MANUAL','MODE_MDI'], 'optional':False} ],      help='Set mode. Legal values: MODE_AUTO, MODE_MANUAL, MODE_MDI).' ).register_in_dict( CommandItems )
 CommandItem( name='override_limits',         paramTypes=[],      help='set the override axis limits flag.' ).register_in_dict( CommandItems )
-CommandItem( name='program_open',            paramTypes=[ {'pname':'filename', 'ptype':'string', 'optional':False} ],      help='open an NGC file' ).register_in_dict( CommandItems )
+CommandItem( name='program_open',            paramTypes=[ {'pname':'filename', 'ptype':'string', 'optional':False}],      help='Open an NGC file.' ).register_in_dict( CommandItems )
+CommandItem( name='program_upload',          paramTypes=[ {'pname':'filename', 'ptype':'string', 'optional':False}, {'pname':'data', 'ptype':'string', 'optional':False} ], command_type=CommandItem.SYSTEM, help='Create and open an NGC file.' ).register_in_dict( CommandItems )
 CommandItem( name='reset_interpreter',       paramTypes=[],      help='reset the RS274NGC interpreter' ).register_in_dict( CommandItems )
 CommandItem( name='set_adaptive_feed',       paramTypes=[ {'pname':'onoff', 'ptype':'int', 'optional':False} ],      help='set adaptive feed flag ' ).register_in_dict( CommandItems )
 CommandItem( name='set_analog_output',       paramTypes=[ {'pname':'index', 'ptype':'int', 'optional':False}, {'pname':'value', 'ptype':'float', 'optional':False} ],      help='set analog output pin to value' ).register_in_dict( CommandItems )
@@ -862,6 +936,7 @@ CommandItem( name='wait_complete',           paramTypes=[ {'pname':'timeout', 'p
 CommandItem( name='config',                  paramTypes=[ {'pname':'data', 'ptype':'dict', 'optional':False} ],       help='Overwrite the config file.  Parameter is a dictionary with the same format as returned from "get config"', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
 CommandItem( name='halfile',                 paramTypes=[ {'pname':'filename', 'ptype':'string', 'optional':False}, {'pname':'data', 'ptype':'string', 'optional':False} ],       help='Overwrite the specified file.  Parameter is a filename, then a string containing the new hal file contents.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
 CommandItem( name='clear_error',             paramTypes=[  ],       help='Clear the last error condition.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
+CommandItem( name='save_client_config',      paramTypes=[ {'pname':'data', 'ptype':'string', 'optional':False} ],     help='Save a JSON object representing client configuration.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
 
 CommandItem( name='shutdown',                paramTypes=[ ],       help='Shutdown LinuxCNC system.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
 CommandItem( name='startup',                 paramTypes=[ ],       help='Start LinuxCNC system.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
@@ -908,7 +983,7 @@ ConfigHelp = {
         'MAX_OUTPUT':       { 'default':'10',        'help':'Might be used by a PID/servo component.  The maximum value for the output of the PID compensation that is written to the motor amplifier, in volts. The computed output value is clamped to this limit. The limit is applied before scaling to raw output units. The value is applied symmetrically to both the plus and the minus side.'},
         'INPUT_SCALE':      { 'default':'20000',     'help':'Might be used by a PID/servo component.  '},
         'ENCODER_SCALE':    { 'default':'20000',     'help':'Might be used by a PID/servo component.  In PNCconf built configs Specifies the number of pulses that corresponds to a move of one machine unit as set in the [TRAJ] section. For a linear axis one machine unit will be equal to the setting of LINEAR_UNITS. For an angular axis one unit is equal to the setting in ANGULAR_UNITS. A second number, if specified, is ignored. '},
-        'SCALE':            { 'default':'4000',      'help':'Might be used by a stepgen component.'},
+        'SCALE':            { 'default':'4000',      'help':'Might be used by a stepgen component.  Number of output step pulses for one unit of linear travel.'},
         'STEP_SCALE':       { 'default':'4000',      'help':'Might be used by a stepgen component. In PNCconf built configs Specifies the number of pulses that corresponds to a move of one machine unit as set in the [TRAJ] section. For stepper systems, this is the number of step pulses issued per machine unit. For a linear axis one machine unit will be equal to the setting of LINEAR_UNITS. For an angular axis one unit is equal to the setting in ANGULAR_UNITS. For servo systems, this is the number of feedback pulses per machine unit. A second number, if specified, is ignored.'},
         'ENCODER_SCALE':    { 'default':'',          'help':'Might be used by a stepgen component. (Optionally used in PNCconf built configs) - Specifies the number of pulses that corresponds to a move of one machine unit as set in the [TRAJ] section. For a linear axis one machine unit will be equal to the setting of LINEAR_UNITS. For an angular axis one unit is equal to the setting in ANGULAR_UNITS. A second number, if specified, is ignored.'},
         'STEPGEN_MAXACCEL': { 'default':'',          'help':'Might be used by a stepgen component.  Acceleration limit for the step generator. This should be 1% to 10% larger than the axis MAX_ACCELERATION. This value improves the tuning of stepgens "position loop". If you have added backlash compensation to an axis then this should be 1.5 to 2 times greater than MAX_ACCELERATION. '},
@@ -1275,12 +1350,19 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
                 if ( ( user in userdict ) and ( userdict.get(user) == pw ) ):
                     self.user_validated = True
                     self.write_message(json.dumps( { 'id':id, 'code':'?OK', 'data':'?OK'}, cls=StatusItemEncoder ))
+                    if int(options.verbose) > 2:
+                        print "Logged in " + user
                 else:
                     self.write_message(json.dumps( { 'id':id, 'code':'?User not logged in', 'data':'?User not logged in'}, cls=StatusItemEncoder ))
+                    if int(options.verbose) > 2:
+                        print "Logged FAILED " + user
             except:
+                if int(options.verbose) > 2:
+                    print "Logged FAILED (user unknown)"
                 self.write_message(json.dumps( { 'id':id, 'code':'?User not logged in', 'data':'?User not logged in'}, cls=StatusItemEncoder ))
+
             
-  
+ 
     def send_message( self, message_to_send ):
         self.write_message( message_to_send )
         if int(options.verbose) > 4:
