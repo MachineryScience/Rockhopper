@@ -42,7 +42,7 @@ import base64
 #import rpdb2
 import socket
 import time
-from threading import Thread, Lock
+import threading
 import fcntl
 import signal
 import select
@@ -52,12 +52,12 @@ from time import strftime
 from optparse import OptionParser
     
 UpdateStatusPollPeriodInMilliSeconds = 50
-UpdateHALPollPeriodInMilliSeconds = 100
+UpdateHALPollPeriodInMilliSeconds = 500
 UpdateErrorPollPeriodInMilliseconds = 25
 
 eps = float(0.000001)
 
-main_loop = tornado.ioloop.IOLoop.instance()
+main_loop =tornado.ioloop.IOLoop.instance()
 
 linuxcnc_command = linuxcnc.command()
 
@@ -73,6 +73,7 @@ instance_number = 0
 lastLCNCerror = ""
 
 options = ""
+
 
 # *****************************************************
 # Class to poll linuxcnc for status.  Other classes can request to be notified
@@ -92,26 +93,27 @@ class LinuxCNCStatusPoller(object):
         self.linuxcnc_errors = linuxcnc.error_channel()
         lastLCNCerror = ""
         self.errorid = 0
-            
+        
         # begin the poll-update loop of the linuxcnc system
         self.scheduler = tornado.ioloop.PeriodicCallback( self.poll_update, UpdateStatusPollPeriodInMilliSeconds, io_loop=main_loop )
         self.scheduler.start()
-
+        
         # begin the poll-update loop of the linuxcnc system
         self.scheduler_errors = tornado.ioloop.PeriodicCallback( self.poll_update_errors, UpdateErrorPollPeriodInMilliseconds, io_loop=main_loop )
         self.scheduler_errors.start()
-
+        
         # register listeners
         self.observers = []
         self.hal_observers = []
-
+        
         # HAL dictionaries of signals and pins
         self.pin_dict = {}
         self.sig_dict = {}
-
+        
         self.counter = 0
-
+        
         self.hal_poll_init()
+        
 
     def add_observer(self, callback):
         self.observers.append(callback)
@@ -187,8 +189,8 @@ class LinuxCNCStatusPoller(object):
 
         #Main part of hal_poll_init:
         # Create a thread for checking the HAL pins and sigs
-        self.hal_mutex = Lock()
-        self.hal_thread = Thread(target = hal_poll_thread, args=(self,))
+        self.hal_mutex = threading.Lock()
+        self.hal_thread = threading.Thread(target = hal_poll_thread, args=(self,))
         self.hal_thread.start()
 
     def poll_update_errors(self):
@@ -216,7 +218,7 @@ class LinuxCNCStatusPoller(object):
 
     def poll_update(self):
         global linuxcnc_command
-        
+
         # update linuxcnc status
         if (self.linuxcnc_is_alive):
             try:
@@ -228,9 +230,10 @@ class LinuxCNCStatusPoller(object):
                 self.linuxcnc_status = None
                 linuxcnc_command = None
 
-        # notify all obervers of new status data poll    
+        # notify all obervers of new status data poll
         for observer in self.observers:
             try:
+                
                 observer()
             except Exception as ex:
                 self.del_observer(observer)
@@ -248,7 +251,7 @@ LINUXCNCSTATUS = []
 # *****************************************************
 class StatusItem( object ):
 
-    def __init__( self, name=None, valtype='', help='', watchable=True, isarray=False, arraylen=0, requiresLinuxCNCUp=True, coreLinuxCNCVariable=True ):
+    def __init__( self, name=None, valtype='', help='', watchable=True, isarray=False, arraylen=0, requiresLinuxCNCUp=True, coreLinuxCNCVariable=True, isAsync=False ):
         self.name = name
         self.valtype = valtype
         self.help = help
@@ -257,6 +260,7 @@ class StatusItem( object ):
         self.watchable = watchable
         self.requiresLinuxCNCUp = requiresLinuxCNCUp
         self.coreLinuxCNCVariable = coreLinuxCNCVariable
+        self.isasync = isAsync
 
     @staticmethod
     def from_name( name ):
@@ -277,11 +281,34 @@ class StatusItem( object ):
     def to_json_compatible_form( self ):
         return self.__dict__
 
+    def backplot_async( self, async_buffer, async_lock ):
+        
+        def do_backplot( self, async_buffer, async_lock ):
+            global MAX_BACKPLOT_LINES
+            try:             
+                gr = GCodeReader.GCodeRender( INI_FILENAME )
+                gr.load()
+                reply = {'data':gr.to_json(maxlines=MAX_BACKPLOT_LINES),'code':LinuxCNCServerCommand.REPLY_COMMAND_OK }
+            except:
+                reply = {'data':'','code':LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND }
+
+            async_lock.acquire()
+            async_buffer.append(reply)
+            async_lock.release()
+            return
+
+        if (( async_buffer is None ) or ( async_lock is None)):
+            return { 'code':LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND,'data':'' } 
+        
+        thread = threading.Thread(target=do_backplot, args=(self, async_buffer, async_lock))
+        thread.start()
+        return { 'code':LinuxCNCServerCommand.REPLY_COMMAND_OK, 'data':'' } 
+
     def backplot( self ):
         global MAX_BACKPLOT_LINES
         gr = GCodeReader.GCodeRender( INI_FILENAME )
         gr.load()
-        return gr.to_json(maxlines=MAX_BACKPLOT_LINES)  
+        return gr.to_json(maxlines=MAX_BACKPLOT_LINES);
 
     def read_gcode_file( self, filename ):
         try:
@@ -378,13 +405,13 @@ class StatusItem( object ):
     def get_client_config( self ):
         global CONFIG_FILENAME
         reply = { 'code': LinuxCNCServerCommand.REPLY_COMMAND_OK }
-        reply['data'] = ''
+        reply['data'] = '{}'
 
         try:
             fo = open( CONFIG_FILENAME, 'r' )
             reply['data'] = fo.read()
         except:
-            reply['data'] = ''
+            reply['data'] = '{}'
         finally:
             try:
                 fo.close()
@@ -454,7 +481,7 @@ class StatusItem( object ):
 
 
     # called in on_new_poll to update the current value of a status item
-    def get_cur_status_value( self, linuxcnc_status_poller, item_index, command_dict ):
+    def get_cur_status_value( self, linuxcnc_status_poller, item_index, command_dict, async_buffer=None, async_lock=None ):
         global lastLCNCerror
         ret = { "code":LinuxCNCServerCommand.REPLY_COMMAND_OK, "data":"" } 
         try:
@@ -488,6 +515,8 @@ class StatusItem( object ):
                             ret['code'] = ret['data']
                     finally:
                         linuxcnc_status_poller.hal_mutex.release()
+                elif (self.name.find('backplot_async') is 0):
+                     ret = self.backplot_async(async_buffer, async_lock)
                 elif (self.name.find('backplot') is 0):
                     ret['data'] = self.backplot()
                 elif (self.name == 'ini_file_name'):
@@ -624,6 +653,7 @@ StatusItem( name='velocity',                 watchable=True, valtype='float' ,  
 
 StatusItem( name='ls',                       coreLinuxCNCVariable=False, watchable=True, valtype='string[]',help='Get a list of gcode files.  Optionally specify directory with "directory":"string", or default directory will be used.  Only *.ngc files will be listed.' ).register_in_dict( StatusItems )
 StatusItem( name='backplot',                 coreLinuxCNCVariable=False, watchable=False, valtype='string[]',help='Backplot information.  Potentially very large list of lines.' ).register_in_dict( StatusItems )
+StatusItem( name='backplot_async',           coreLinuxCNCVariable=False, watchable=False, valtype='string[]', isAsync=True, help='Backplot information.  Potentially very large list of lines.' ).register_in_dict( StatusItems )
 StatusItem( name='config',                   coreLinuxCNCVariable=False, watchable=False, valtype='dict',    help='Config (ini) file contents.', requiresLinuxCNCUp=False  ).register_in_dict( StatusItems )
 StatusItem( name='config_item',              coreLinuxCNCVariable=False, watchable=False, valtype='dict',    help='Specific section/name from the config file.  Pass in section=??? and name=???.', requiresLinuxCNCUp=False  ).register_in_dict( StatusItems )
 StatusItem( name='halfile',                  coreLinuxCNCVariable=False, watchable=False, valtype='string',  help='Contents of a hal file.  Pass in filename=??? to specify the hal file name', requiresLinuxCNCUp=False ).register_in_dict( StatusItems )
@@ -712,12 +742,22 @@ class CommandItem( object ):
 
         return reply
 
-    def put_client_config( self, data ):
+    def put_client_config( self, key, value ):
         global CONFIG_FILENAME
         reply = {'code':LinuxCNCServerCommand.REPLY_COMMAND_OK}
+        
         try:
+            fo = open( CONFIG_FILENAME, 'r' )
+            jsonobj = json.loads( fo.read() );
+            jsonobj[key] = value;
+        except:
+            jsonobj = {}
+        finally:
+            fo.close()
+        
+        try:    
             fo = open( CONFIG_FILENAME, 'w' )
-            fo.write( json.dumps(data) )
+            fo.write( json.dumps(jsonobj) )
         except:
             reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
         finally:
@@ -725,6 +765,7 @@ class CommandItem( object ):
                 fo.close()
             except:
                 reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
+                
         return reply
            
 
@@ -876,7 +917,7 @@ class CommandItem( object ):
                 elif (self.name == 'program_upload'):
                     reply = self.put_gcode_file(filename=passed_command_dict.get('filename',passed_command_dict['0']).strip(), data=passed_command_dict.get('data', passed_command_dict['1']))
                 elif (self.name == 'save_client_config'):
-                    reply = self.put_client_config( passed_command_dict.get('data', passed_command_dict.get['0']) );
+                    reply = self.put_client_config( (passed_command_dict.get('key', passed_command_dict.get('0'))), (passed_command_dict.get('value', passed_command_dict.get('1'))) );
                 else:
                     reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
                 return reply
@@ -936,7 +977,7 @@ CommandItem( name='wait_complete',           paramTypes=[ {'pname':'timeout', 'p
 CommandItem( name='config',                  paramTypes=[ {'pname':'data', 'ptype':'dict', 'optional':False} ],       help='Overwrite the config file.  Parameter is a dictionary with the same format as returned from "get config"', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
 CommandItem( name='halfile',                 paramTypes=[ {'pname':'filename', 'ptype':'string', 'optional':False}, {'pname':'data', 'ptype':'string', 'optional':False} ],       help='Overwrite the specified file.  Parameter is a filename, then a string containing the new hal file contents.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
 CommandItem( name='clear_error',             paramTypes=[  ],       help='Clear the last error condition.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
-CommandItem( name='save_client_config',      paramTypes=[ {'pname':'data', 'ptype':'string', 'optional':False} ],     help='Save a JSON object representing client configuration.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
+CommandItem( name='save_client_config',      paramTypes=[ {'pname':'key', 'ptype':'string', 'optional':False}, {'pname':'value', 'ptype':'string', 'optional':False} ],     help='Save a JSON object representing client configuration.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
 
 CommandItem( name='shutdown',                paramTypes=[ ],       help='Shutdown LinuxCNC system.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
 CommandItem( name='startup',                 paramTypes=[ ],       help='Start LinuxCNC system.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
@@ -1187,6 +1228,9 @@ class LinuxCNCServerCommand( object ):
         self.StatusItems = statusItems
         self.CommandItems = commandItems
         self.server_command_handler = server_command_handler
+        self.async_reply_buf = []
+        self.async_reply_buf_lock = threading.Lock() 
+        
         if (command_dict is None):        
             try:
                 self.commandDict = json.loads( command_message )
@@ -1226,6 +1270,18 @@ class LinuxCNCServerCommand( object ):
         except:
             pass
 
+    def monitor_async(self):
+        if (len(self.async_reply_buf) > 0):
+            
+            self.async_reply_buf_lock.acquire()
+
+            self.replyval = self.async_reply_buf[0]         
+            self.server_command_handler.send_message( self.form_reply() )
+            self.async_reply_buf_lock.release()
+
+            self.linuxcnc_status_poller.del_observer( self.monitor_async )
+        
+        return
 
     # this is the main interface to a LinuxCNCServerCommand.  This determines what the command is, and executes it.
     # Callbacks are made to the self.server_command_handler to write output to the websocket
@@ -1234,7 +1290,7 @@ class LinuxCNCServerCommand( object ):
         self.commandID = self.commandDict.get('id','none')
         self.replyval = {}
         self.replyval['code'] = LinuxCNCServerCommand.REPLY_INVALID_COMMAND
-        if ( self.command == 'get' ):
+        if ( self.command == 'get'):
             try:
                 self.item_index = 0
                 self.replyval['code'] = LinuxCNCServerCommand.REPLY_INVALID_COMMAND_PARAMETER
@@ -1246,7 +1302,11 @@ class LinuxCNCServerCommand( object ):
                     if ( self.statusitem.isarray ):
                         self.item_index = self.commandDict['index']
                         self.replyval['index'] = self.item_index;
-                    self.replyval = self.statusitem.get_cur_status_value(self.linuxcnc_status_poller, self.item_index, self.commandDict )
+
+                    if (self.statusitem.isasync):
+                        self.linuxcnc_status_poller.add_observer( self.monitor_async )
+                        
+                    self.replyval = self.statusitem.get_cur_status_value(self.linuxcnc_status_poller, self.item_index, self.commandDict, async_buffer=self.async_reply_buf, async_lock=self.async_reply_buf_lock )
             except:
                 self.replyval['code'] = LinuxCNCServerCommand.REPLY_NAK
 
@@ -1316,10 +1376,11 @@ class LinuxCNCServerCommand( object ):
 class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
 
     def __init__(self, *args, **kwargs):
+        global LINUXCNCSTATUS
         super( LinuxCNCCommandWebSocketHandler, self ).__init__( *args, **kwargs )
         self.user_validated = False
         print "New websocket Connection..."
-
+    
     def open(self,arg):
         global LINUXCNCSTATUS
         self.isclosed = False
@@ -1331,13 +1392,15 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
     def on_message(self, message): 
         global LINUXCNCSTATUS
         if int(options.verbose) > 2:
-            print "GOT: " + message
+            if (message.find("\"HB\"") < 0):
+                print "GOT: " + message
         if (self.user_validated):
             try:
                 reply = LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_message=message ).execute()
                 self.write_message(reply)
                 if int(options.verbose) > 3:
-                    print "Reply: " + reply
+                    if (reply.find("\"HB\"") < 0) and (reply.find("backplot") < 0):
+                        print "Reply: " + reply
             except Exception as ex:
                 print "1:", ex
         else:
@@ -1366,7 +1429,7 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
     def send_message( self, message_to_send ):
         self.write_message( message_to_send )
         if int(options.verbose) > 4:
-            if (message_to_send.find("actual_position") < 0):
+            if (message_to_send.find("actual_position") < 0) and (message_to_send.find("\"HB\"") < 0) and (message_to_send.find("backplot") < 0) :
                 print "SEND: " + message_to_send
 
     def on_close(self):
@@ -1605,8 +1668,6 @@ def main():
         instance_number = random()
         print "Webserver reloading..."
 
-
-
     parser = OptionParser()
     parser.add_option("-v", "--verbose", dest="verbose", default=0,
                       help="Verbosity level.  Default to 0 for quiet.  Set to 5 for max.")
@@ -1620,10 +1681,17 @@ def main():
     instance_number = random()
     LINUXCNCSTATUS = LinuxCNCStatusPoller(main_loop, UpdateStatusPollPeriodInMilliSeconds)
 
+    if ( int(options.verbose) > 4):
+        print "Parsing INI File Name"
+
     if len(args) < 1:
         sys.exit('Usage: LinuxCNCWebSktSvr.py <LinuxCNC_INI_file_name>')
     INI_FILENAME = args[0]
     [INI_FILE_PATH, x] = os.path.split( INI_FILENAME )
+
+    if ( int(options.verbose) > 4):
+        print "INI File: ", INI_FILENAME
+
 
     logging.basicConfig(filename=os.path.join(application_path,'linuxcnc_webserver.log'),format='%(asctime)sZ pid:%(process)s module:%(module)s %(message)s', level=logging.ERROR)
  

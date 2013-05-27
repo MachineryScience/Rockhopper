@@ -88,10 +88,10 @@ class GCodeRender( rs274.glcanon.GlCanonDraw ):
         finally:
             pass
 
-    def write_json( self, filename, compact=True, fixed_point_precision=5 ):
+    def write_json( self, filename, compact=True, fixed_point_precision=5, maxlines=-1 ):
         try:
             f = open(filename,'w')
-            f.write( self.to_json(compact=compact, fixed_point_precision=fixed_point_precision) )
+            f.write( self.to_json(compact=compact, fixed_point_precision=fixed_point_precision, maxlines=maxlines) )
         finally:
             f.close()
 
