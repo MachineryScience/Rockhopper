@@ -86,9 +86,12 @@ class HALAnalyzer( object ):
                     self.Graph.add_edge( sig_name, pin_g_val[4] )
 
     def write_svg( self, filename ):
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore",category=DeprecationWarning)
-            self.Graph.draw( path=filename, format='svg', prog='dot' )
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore",category=DeprecationWarning)
+                self.Graph.draw( path=filename, format='svg', prog='dot' )
+        except Exception, err:
+            print err
 
 
 if __name__ == "__main__":
