@@ -74,6 +74,10 @@ lastLCNCerror = ""
 
 options = ""
 
+lastBackplotFilename = ""
+lastBackplotData = ""
+BackplotLock = threading.Lock() 
+
 
 # *****************************************************
 # Class to poll linuxcnc for status.  Other classes can request to be notified
@@ -281,16 +285,29 @@ class StatusItem( object ):
     def to_json_compatible_form( self ):
         return self.__dict__
 
-    def backplot_async( self, async_buffer, async_lock ):
+    def backplot_async( self, async_buffer, async_lock, linuxcnc_status_poller ):
+
+        global lastBackplotFilename
+        global lastBackplotData
         
-        def do_backplot( self, async_buffer, async_lock ):
+        def do_backplot( self, async_buffer, async_lock, filename ):
             global MAX_BACKPLOT_LINES
-            try:             
-                gr = GCodeReader.GCodeRender( INI_FILENAME )
-                gr.load()
-                reply = {'data':gr.to_json(maxlines=MAX_BACKPLOT_LINES),'code':LinuxCNCServerCommand.REPLY_COMMAND_OK }
-            except:
+            global lastBackplotFilename
+            global lastBackplotData
+            global BackplotLock
+
+            BackplotLock.acquire()
+            try:
+                if (lastBackplotFilename != filename):
+                    gr = GCodeReader.GCodeRender( INI_FILENAME )
+                    gr.load()
+                    lastBackplotData = gr.to_json(maxlines=MAX_BACKPLOT_LINES)
+                    lastBackplotFilename = filename
+                reply = {'data':lastBackplotData, 'code':LinuxCNCServerCommand.REPLY_COMMAND_OK }
+            except ex:
                 reply = {'data':'','code':LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND }
+                print ex
+            BackplotLock.release()
 
             async_lock.acquire()
             async_buffer.append(reply)
@@ -298,17 +315,28 @@ class StatusItem( object ):
             return
 
         if (( async_buffer is None ) or ( async_lock is None)):
-            return { 'code':LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND,'data':'' } 
+            return { 'code':LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND,'data':'' }
+
+        if (lastBackplotFilename == linuxcnc_status_poller.linuxcnc_status.file):
+            return {'data':lastBackplotData, 'code':LinuxCNCServerCommand.REPLY_COMMAND_OK}
         
-        thread = threading.Thread(target=do_backplot, args=(self, async_buffer, async_lock))
+        thread = threading.Thread(target=do_backplot, args=(self, async_buffer, async_lock, linuxcnc_status_poller.linuxcnc_status.file))
         thread.start()
         return { 'code':LinuxCNCServerCommand.REPLY_COMMAND_OK, 'data':'' } 
 
     def backplot( self ):
         global MAX_BACKPLOT_LINES
-        gr = GCodeReader.GCodeRender( INI_FILENAME )
-        gr.load()
-        return gr.to_json(maxlines=MAX_BACKPLOT_LINES);
+        global BackplotLock
+        reply = ""
+        BackplotLock.acquire()
+        try:
+            gr = GCodeReader.GCodeRender( INI_FILENAME )
+            gr.load()
+            reply = gr.to_json(maxlines=MAX_BACKPLOT_LINES);
+        except ex:
+            print ex
+        BackplotLock.release()
+        return reply
 
     def read_gcode_file( self, filename ):
         try:
@@ -516,7 +544,7 @@ class StatusItem( object ):
                     finally:
                         linuxcnc_status_poller.hal_mutex.release()
                 elif (self.name.find('backplot_async') is 0):
-                     ret = self.backplot_async(async_buffer, async_lock)
+                     ret = self.backplot_async(async_buffer, async_lock,linuxcnc_status_poller)
                 elif (self.name.find('backplot') is 0):
                     ret['data'] = self.backplot()
                 elif (self.name == 'ini_file_name'):
