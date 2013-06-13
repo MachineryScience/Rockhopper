@@ -1759,10 +1759,10 @@ def main():
 
 # auto start if executed from the command line
 if __name__ == "__main__":
-    os.setpgrp()
+
     try:
-        main()  
-    finally:
-        # kill all forked processes
-        os.killpg(0, signal.SIGKILL)
+        main()
+    except Exception as ex:
+        print ex
+            
 
