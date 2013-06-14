@@ -1729,11 +1729,11 @@ def main():
     userdict = {}
     try:
         parser = SafeConfigParser() 
-        parser.read('users.ini')
+        parser.read(os.path.join(application_path,'users.ini'))
         for name, value in parser.items('users'):
             userdict[name] = value
-    except:
-        pass
+    except Exception as ex:
+        print "Error reading users.ini:", ex
 
 
     logging.info("Starting linuxcnc http server...")
