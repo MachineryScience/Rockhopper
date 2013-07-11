@@ -2,7 +2,7 @@ The LinuxCNC WebSocket Server is a lightweight web server customized to provide 
 
 The server is based on the Tornado open source web server framework.  Tornado is written in Python, and the LinuxCNC Web Socket Server is also written using the Python programming language.
 
-The interface to the LinuxCNC system uses the Python API for LinuxCNC.  Documentation for this API is at http://www.linuxcnc.org/docs/devel/html/config/ini_config.html#_emc_section_a_id_sub_emc_section_a
+The interface to the LinuxCNC system uses the Python API for LinuxCNC.  Documentation for this API is at http://www.linuxcnc.org/docs/html/common/python-interface.html
 
 The server also uses the halcmd program, a part of LinuxCNC which can access and configure the HAL layer of LinuxCNC.
 
