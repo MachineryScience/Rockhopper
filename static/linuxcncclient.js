@@ -945,6 +945,48 @@ function SandboxSocketMessageHandler(evt)
 
 
 // ********************************
+// for Security tab
+// ********************************
+function SecuritySocketOpen()
+{
+    ws.onmessage = SecuritySocketMessageHandler;
+    document.getElementById("Command_Reply").innerHTML = "Server Connection Initiated"
+
+    document.forms["UserForm"]["user_name"].value = readCookie("linuxcnc_username");
+    document.forms["UserForm"]["user_password"].value = "";
+
+    ws.send( JSON.stringify({ "id":"USER_CHECK", "command":"watch", "name":"users" }) ) ;
+}
+
+function SecuritySocketMessageHandler(evt)
+{
+    var result = JSON.parse(evt.data);
+
+    if ( result["id"] == "USER_CHECK" )
+    {
+        document.getElementById("user_list").innerHTML = ( result.data.sort().toString() );
+    } else if ( result["id"] == "SET_USER" )
+    {
+        document.getElementById("Command_Reply").innerHTML = "Server replied: " + result["code"];
+    }
+
+}
+
+function UpdateUser()
+{
+    ws.send( JSON.stringify({ "id":"SET_USER", "command":"put", "name":"add_user", "0":document.forms["UserForm"]["user_name"].value, "1":document.forms["UserForm"]["user_password"].value }) ) ;
+    document.forms["UserForm"]["user_password"].value = "";
+}
+
+function DeleteUser()
+{
+    ws.send( JSON.stringify({ "id":"SET_USER", "command":"put", "name":"add_user", "0":document.forms["UserForm"]["user_name"].value, "1":"-" }) ) ;
+    document.forms["UserForm"]["user_password"].value = "";
+}
+
+
+
+// ********************************
 // for System tab
 // 
 // Simple interface for starting and stopping LinuxCNC
@@ -1015,6 +1057,7 @@ function MonitorWebSocket()
 function LoginMessage(evt)
 {
     var result = JSON.parse(evt.data);
+
     if (result["code"] == "?OK")
     {
         ws.custom_onopen();
@@ -1068,7 +1111,7 @@ function Login()
 // values.
 function PollLinuxCNC( type )
 {
-    document.getElementById("AltWebSocketData").style.display="none"; 
+    document.getElementById("AltWebSocketData").style.display="none";
     
     ws = new WebSocket("ws://" + document.domain + ":8000/websocket/linuxcnc","linuxcnc");
     
@@ -1090,6 +1133,8 @@ function PollLinuxCNC( type )
         ws.custom_onopen = SandboxSocketOpen;
     else if (type == 'system')
         ws.custom_onopen = SystemSocketOpen;
+    else if (type == 'security')
+        ws.custom_onopen = SecuritySocketOpen;
 
     if (!( ws.custom_onopen == undefined ))
     {

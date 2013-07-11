@@ -1,0 +1,35 @@
+<!-- Copyright 2012, 2013 Machinery Science, LLC   -->
+{% extends LinuxCNCTemplate.html %}
+
+{% block definitions %}
+    {% set name = 'security' %}
+{%end%}
+
+{% block label %}Security{% end %}
+
+{% block custom_header %}
+{% end %}
+
+{% block custom_body %}
+<p> This section is for changing the user names and passwords of those allowed to access this web page.
+</p>
+
+        <div id="top_button_bar">
+        <button type="button" id="update_user" value="Update_User" onclick="UpdateUser();">Update/Add User</button>
+        <button type="button" id="delete_user" value="Delete_User" onclick="DeleteUser();">Delete User</button>
+        </div>
+
+        <form name="UserForm" >
+            User: <input type="text" name="user_name" size=150><br>
+            Password: <input type="password" name="user_password" size=150><br>
+        </form><br>
+
+        <br>
+        <p>Currently Valid Users: <span id="user_list"></span></p>
+
+<br>
+
+{% end %}
+
+
+
