@@ -501,6 +501,10 @@ class StatusItem( object ):
             code = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
         return { "code":code, "data":file_list, "directory":directory }
 
+    def get_users( self ):
+        global userdict
+        return  { "code":LinuxCNCServerCommand.REPLY_COMMAND_OK, "data":userdict.keys() }
+
     def get_halgraph( self ):
         ret = { "code":LinuxCNCServerCommand.REPLY_COMMAND_OK, "data":"" }
         try:
@@ -569,6 +573,8 @@ class StatusItem( object ):
                     ret = self.get_hal_file( command_dict.get("filename", '') )
                 elif (self.name == 'client_config'):
                     ret = self.get_client_config()
+                elif (self.name == 'users'):
+                    ret = self.get_users()
                 elif (self.name == 'error'):
                     ret['data'] = lastLCNCerror
             else:
@@ -694,6 +700,7 @@ StatusItem( name='halfile',                  coreLinuxCNCVariable=False, watchab
 StatusItem( name='halgraph',                 coreLinuxCNCVariable=False, watchable=False, valtype='string',  help='Filename of the halgraph generated from the currently running instance of LinuxCNC.  Filename will be "halgraph.svg"' ).register_in_dict( StatusItems )
 StatusItem( name='ini_file_name',            coreLinuxCNCVariable=False, watchable=True,  valtype='string',  help='INI file to use for next LinuxCNC start.', requiresLinuxCNCUp=False ).register_in_dict( StatusItems )
 StatusItem( name='client_config',            coreLinuxCNCVariable=False, watchable=True,  valtype='string',  help='Client Configuration.', requiresLinuxCNCUp=False ).register_in_dict( StatusItems )
+StatusItem( name='users',                    coreLinuxCNCVariable=False, watchable=True,  valtype='string',  help='Web server user list.', requiresLinuxCNCUp=False ).register_in_dict( StatusItems )
 
 StatusItem( name='error',                    coreLinuxCNCVariable=False, watchable=True,  valtype='dict',    help='Error queue.' ).register_in_dict( StatusItems )
 StatusItem( name='running',                  coreLinuxCNCVariable=False, watchable=True,  valtype='int',     help='True if linuxcnc is up and running.', requiresLinuxCNCUp=False ).register_in_dict( StatusItems )
@@ -882,6 +889,15 @@ class CommandItem( object ):
         subprocess.Popen(['linuxcnc', INI_FILENAME], stderr=subprocess.STDOUT )
         return {'code':LinuxCNCServerCommand.REPLY_COMMAND_OK}
 
+    def add_user( self, username, password ):
+        try:
+            proc = subprocess.Popen(['python', 'AddUser.py', username, password], stderr=subprocess.STDOUT )
+            proc.communicate()
+            readUserList()
+            return {'code':LinuxCNCServerCommand.REPLY_COMMAND_OK}
+        except:
+            pass
+
     def execute( self, passed_command_dict, linuxcnc_status_poller ):
         global INI_FILENAME
         global INI_FILE_PATH
@@ -952,6 +968,8 @@ class CommandItem( object ):
                     reply = self.put_gcode_file(filename=passed_command_dict.get('filename',passed_command_dict['0']).strip(), data=passed_command_dict.get('data', passed_command_dict['1']))
                 elif (self.name == 'save_client_config'):
                     reply = self.put_client_config( (passed_command_dict.get('key', passed_command_dict.get('0'))), (passed_command_dict.get('value', passed_command_dict.get('1'))) );
+                elif (self.name == 'add_user'):
+                    reply = self.add_user( passed_command_dict.get('username',passed_command_dict['0']).strip(), passed_command_dict.get('password',passed_command_dict['1']).strip() )
                 else:
                     reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
                 return reply
@@ -1012,6 +1030,8 @@ CommandItem( name='config',                  paramTypes=[ {'pname':'data', 'ptyp
 CommandItem( name='halfile',                 paramTypes=[ {'pname':'filename', 'ptype':'string', 'optional':False}, {'pname':'data', 'ptype':'string', 'optional':False} ],       help='Overwrite the specified file.  Parameter is a filename, then a string containing the new hal file contents.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
 CommandItem( name='clear_error',             paramTypes=[  ],       help='Clear the last error condition.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
 CommandItem( name='save_client_config',      paramTypes=[ {'pname':'key', 'ptype':'string', 'optional':False}, {'pname':'value', 'ptype':'string', 'optional':False} ],     help='Save a JSON object representing client configuration.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
+
+CommandItem( name='add_user',                paramTypes=[ {'pname':'username', 'ptype':'string', 'optional':False}, {'pname':'password', 'ptype':'string', 'optional':False} ], help='Add a user to the web server.  Set password to - to delete the user.  If all users are deleted, then a user named default, password=default will be created.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
 
 CommandItem( name='shutdown',                paramTypes=[ ],       help='Shutdown LinuxCNC system.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
 CommandItem( name='startup',                 paramTypes=[ ],       help='Start LinuxCNC system.', command_type=CommandItem.SYSTEM ).register_in_dict( CommandItems )
@@ -1647,6 +1667,20 @@ class PollHeaderLogin(tornado.web.RequestHandler):
             
         self.finish()
 
+def readUserList():
+    global userdict
+    global application_path
+
+    logging.info("Reading user list...")
+    userdict = {}
+    try:
+        parser = SafeConfigParser() 
+        parser.read(os.path.join(application_path,'users.ini'))
+        for name, value in parser.items('users'):
+            userdict[name] = value
+    except Exception as ex:
+        print "Error reading users.ini:", ex
+
 # *****************************************************
 # *****************************************************
 class MainHandler(tornado.web.RequestHandler):
@@ -1664,6 +1698,7 @@ class MainHandler(tornado.web.RequestHandler):
 
 # determine current path to executable
 # determine if application is a script file or frozen exe
+global application_path
 if getattr(sys, 'frozen', False):
     application_path = os.path.dirname(sys.executable)
 elif __file__:
@@ -1684,7 +1719,6 @@ application = tornado.web.Application([
     static_path=os.path.join(application_path, "static"),
     )
 
-
 # ********************************
 # ********************************
 # main()
@@ -1697,6 +1731,7 @@ def main():
     global instance_number
     global LINUXCNCSTATUS
     global options
+    global userdict
 
     def fn():
         instance_number = random()
@@ -1731,16 +1766,7 @@ def main():
  
     #rpdb2.start_embedded_debugger("password")
 
-    logging.info("Reading user list...")
-    userdict = {}
-    try:
-        parser = SafeConfigParser() 
-        parser.read(os.path.join(application_path,'users.ini'))
-        for name, value in parser.items('users'):
-            userdict[name] = value
-    except Exception as ex:
-        print "Error reading users.ini:", ex
-
+    readUserList()
 
     logging.info("Starting linuxcnc http server...")
     print "Starting Rockhopper linuxcnc http server."
