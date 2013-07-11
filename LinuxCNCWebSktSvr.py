@@ -141,11 +141,13 @@ class LinuxCNCStatusPoller(object):
         def hal_poll_thread(self):
             global instance_number
             myinstance = instance_number
+            pollDelay = True
 
             while (myinstance == instance_number):
                 
                 # first, check if linuxcnc is running at all
                 if (not os.path.isfile( '/tmp/linuxcnc.lock' )):
+                    pollDelay = True
                     self.hal_mutex.acquire()
                     try:
                         self.linuxcnc_is_alive = False
@@ -160,6 +162,10 @@ class LinuxCNCStatusPoller(object):
                     continue
                 else:
                     self.linuxcnc_is_alive = True
+                    if (pollDelay):
+                        # Delay on the first time linuxCNC lock file is present, so as not to call halcmd at the same time linuxcnc is starting
+                        time.sleep(10)
+                        pollDelay = False
 
                 self.p = subprocess.Popen( ['halcmd', '-s', 'show', 'pin'] , stderr=subprocess.PIPE, stdout=subprocess.PIPE )
                 rawtuple = self.p.communicate()
