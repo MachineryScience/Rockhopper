@@ -20,6 +20,7 @@
 #
 import sys
 import os
+import gc
 import linuxcnc
 import math
 import tornado.ioloop
@@ -146,29 +147,24 @@ class LinuxCNCStatusPoller(object):
             while (myinstance == instance_number):
                 
                 # first, check if linuxcnc is running at all
-                if (not os.path.isfile( '/tmp/linuxcnc.lock' )):
+                # if (not os.path.isfile( '/tmp/linuxcnc.lock' ) or os.path.isfile('/tmp/linuxcnc.shutdown') ):
+                if (not os.path.isfile( '/tmp/linuxcnc.lock' ) ):
                     pollStartDelay = 0
                     self.hal_mutex.acquire()
                     try:
+                        if ( self.linuxcnc_is_alive ):
+                            print "LinuxCNC has stopped."
                         self.linuxcnc_is_alive = False
                         self.pin_dict = {}
                         self.sig_dict = {}
-                        self.linuxcnc_errors = None
-                        self.linuxcnc_status = None
-                        linuxcnc_command = None
                     finally:
                         self.hal_mutex.release()
                     time.sleep(UpdateHALPollPeriodInMilliSeconds/1000.0)
                     continue
                 else:
-                    if (pollStartDelay < 500):
-                        # Delay on the first time linuxCNC lock file is present, so as not to call halcmd at the same time linuxcnc is starting
-                        # But also keep checking if the lock file has disappeared, so we don't ever use a stale linuxcnc_status channel
-                        time.sleep(0.01)
-                        pollStartDelay = pollStartDelay + 1
-                        continue
-                    else:
-                        self.linuxcnc_is_alive = True    
+                    if ( not self.linuxcnc_is_alive ):
+                        print "LinuxCNC has started."
+                    self.linuxcnc_is_alive = True
 
                 self.p = subprocess.Popen( ['halcmd', '-s', 'show', 'pin'] , stderr=subprocess.PIPE, stdout=subprocess.PIPE )
                 rawtuple = self.p.communicate()
@@ -211,8 +207,8 @@ class LinuxCNCStatusPoller(object):
 
         if (self.linuxcnc_is_alive is False):
             return
-        
-        if ( (self.linuxcnc_status is None) ):
+
+        if ( (self.linuxcnc_errors is None) ):
             self.linuxcnc_errors = linuxcnc.error_channel()
         try:    
             error = self.linuxcnc_errors.poll()
@@ -242,11 +238,14 @@ class LinuxCNCStatusPoller(object):
             except:
                 self.linuxcnc_status = None
                 linuxcnc_command = None
+        else:
+            self.linuxcnc_errors = None
+            self.linuxcnc_status = None
+            linuxcnc_command = None
 
         # notify all obervers of new status data poll
         for observer in self.observers:
             try:
-                
                 observer()
             except Exception as ex:
                 self.del_observer(observer)
