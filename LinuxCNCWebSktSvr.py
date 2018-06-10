@@ -1,4 +1,4 @@
-#!/usr/bin/python 
+#!/usr/bin/python
 # -*- coding: cp1252 -*-
 
 # *****************************************************
@@ -13,7 +13,7 @@
 # WebSocket using JSON formatted commands and replies.
 #
 #
-# ***************************************************** 
+# *****************************************************
 # *****************************************************
 #
 # Copyright 2012, 2013 Machinery Science, LLC
@@ -51,7 +51,7 @@ import glob
 from random import random
 from time import strftime
 from optparse import OptionParser
-    
+
 UpdateStatusPollPeriodInMilliSeconds = 50
 UpdateHALPollPeriodInMilliSeconds = 500
 UpdateErrorPollPeriodInMilliseconds = 25
@@ -77,7 +77,7 @@ options = ""
 
 lastBackplotFilename = ""
 lastBackplotData = ""
-BackplotLock = threading.Lock() 
+BackplotLock = threading.Lock()
 
 
 # *****************************************************
@@ -98,27 +98,27 @@ class LinuxCNCStatusPoller(object):
         self.linuxcnc_errors = linuxcnc.error_channel()
         lastLCNCerror = ""
         self.errorid = 0
-        
+
         # begin the poll-update loop of the linuxcnc system
-        self.scheduler = tornado.ioloop.PeriodicCallback( self.poll_update, UpdateStatusPollPeriodInMilliSeconds, io_loop=main_loop )
+        self.scheduler = tornado.ioloop.PeriodicCallback( self.poll_update, UpdateStatusPollPeriodInMilliSeconds )
         self.scheduler.start()
-        
+
         # begin the poll-update loop of the linuxcnc system
-        self.scheduler_errors = tornado.ioloop.PeriodicCallback( self.poll_update_errors, UpdateErrorPollPeriodInMilliseconds, io_loop=main_loop )
+        self.scheduler_errors = tornado.ioloop.PeriodicCallback( self.poll_update_errors, UpdateErrorPollPeriodInMilliseconds )
         self.scheduler_errors.start()
-        
+
         # register listeners
         self.observers = []
         self.hal_observers = []
-        
+
         # HAL dictionaries of signals and pins
         self.pin_dict = {}
         self.sig_dict = {}
-        
+
         self.counter = 0
-        
+
         self.hal_poll_init()
-        
+
 
     def add_observer(self, callback):
         self.observers.append(callback)
@@ -145,7 +145,7 @@ class LinuxCNCStatusPoller(object):
             pollStartDelay = 0
 
             while (myinstance == instance_number):
-                
+
                 # first, check if linuxcnc is running at all
                 # if (not os.path.isfile( '/tmp/linuxcnc.lock' ) or os.path.isfile('/tmp/linuxcnc.shutdown') ):
                 if (not os.path.isfile( '/tmp/linuxcnc.lock' ) ):
@@ -210,7 +210,7 @@ class LinuxCNCStatusPoller(object):
 
         if ( (self.linuxcnc_errors is None) ):
             self.linuxcnc_errors = linuxcnc.error_channel()
-        try:    
+        try:
             error = self.linuxcnc_errors.poll()
 
             if error:
@@ -221,7 +221,7 @@ class LinuxCNCStatusPoller(object):
                     typus = "info"
                 lastLCNCerror = { "kind":kind, "type":typus, "text":text, "time":strftime("%Y-%m-%d %H:%M:%S"), "id":self.errorid }
 
-                self.errorid = self.errorid + 1 
+                self.errorid = self.errorid + 1
         except:
             pass
 
@@ -256,7 +256,7 @@ class LinuxCNCStatusPoller(object):
 # *****************************************************
 LINUXCNCSTATUS = []
 
-    
+
 
 # *****************************************************
 # Class to track an individual status item
@@ -297,7 +297,7 @@ class StatusItem( object ):
 
         global lastBackplotFilename
         global lastBackplotData
-        
+
         def do_backplot( self, async_buffer, async_lock, filename ):
             global MAX_BACKPLOT_LINES
             global lastBackplotFilename
@@ -327,10 +327,10 @@ class StatusItem( object ):
 
         if (lastBackplotFilename == linuxcnc_status_poller.linuxcnc_status.file):
             return {'data':lastBackplotData, 'code':LinuxCNCServerCommand.REPLY_COMMAND_OK}
-        
+
         thread = threading.Thread(target=do_backplot, args=(self, async_buffer, async_lock, linuxcnc_status_poller.linuxcnc_status.file))
         thread.start()
-        return { 'code':LinuxCNCServerCommand.REPLY_COMMAND_OK, 'data':'' } 
+        return { 'code':LinuxCNCServerCommand.REPLY_COMMAND_OK, 'data':'' }
 
     def backplot( self ):
         global MAX_BACKPLOT_LINES
@@ -362,16 +362,16 @@ class StatusItem( object ):
             reply = StatusItem.get_ini_data( only_section=section.strip(), only_name=item_name.strip() )
         except Exception as ex:
             reply = {'code':LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND,'data':''}
-        return reply        
+        return reply
 
     # called in a "get_config" command to read the config file and output it's values
     @staticmethod
     def get_ini_data( only_section=None, only_name=None ):
         global INIFileDataTemplate
         global INI_FILENAME
-        global INI_FILE_PATH         
+        global INI_FILE_PATH
         INIFileData = deepcopy(INIFileDataTemplate)
-       
+
         sectionRegEx = re.compile( r"^\s*\[\s*(.+?)\s*\]" )
         keyValRegEx = re.compile( r"^\s*(.+?)\s*=\s*(.+?)\s*$" )
         try:
@@ -394,7 +394,7 @@ class StatusItem( object ):
                                 pass
                             if (only_section is None or only_section == section):
                                 INIFileData['sections'][section] = { 'comment':comments, 'help':hlp }
-                            comments = '' 
+                            comments = ''
                         else:
                             mo = keyValRegEx.search( line )
                             if mo:
@@ -456,9 +456,9 @@ class StatusItem( object ):
         return reply
 
 
-    def get_hal_file( self, filename ): 
+    def get_hal_file( self, filename ):
         global INI_FILENAME
-        global INI_FILE_PATH        
+        global INI_FILE_PATH
         try:
 
             reply = { 'code': LinuxCNCServerCommand.REPLY_COMMAND_OK }
@@ -481,7 +481,7 @@ class StatusItem( object ):
                     fo.close()
                 except:
                     pass
-            
+
         except Exception as ex:
             reply['data'] = ''
             reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
@@ -514,7 +514,7 @@ class StatusItem( object ):
             analyzer.parse_pins()
             analyzer.write_svg( os.path.join(application_path,"static/halgraph.svg") )
             ret['data'] = 'static/halgraph.svg'
-        except:        
+        except:
             ret['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
             ret['data'] = ''
         return ret
@@ -523,7 +523,7 @@ class StatusItem( object ):
     # called in on_new_poll to update the current value of a status item
     def get_cur_status_value( self, linuxcnc_status_poller, item_index, command_dict, async_buffer=None, async_lock=None ):
         global lastLCNCerror
-        ret = { "code":LinuxCNCServerCommand.REPLY_COMMAND_OK, "data":"" } 
+        ret = { "code":LinuxCNCServerCommand.REPLY_COMMAND_OK, "data":"" }
         try:
             if (self.name == 'running'):
                 if linuxcnc_status_poller.linuxcnc_is_alive:
@@ -531,7 +531,7 @@ class StatusItem( object ):
                 else:
                     ret['data'] = 0
                 return ret
-                
+
             if (not linuxcnc_status_poller.linuxcnc_is_alive and self.requiresLinuxCNCUp ):
                 ret = { "code":LinuxCNCServerCommand.REPLY_LINUXCNC_NOT_RUNNING, "data":"Server is not running." }
                 return ret
@@ -716,12 +716,12 @@ StatusItem( name='axis',                     watchable=True, valtype='dict' ,   
 # Class to issue cnc commands
 # *****************************************************
 class CommandItem( object ):
-    
+
     # Command types
     MOTION=0
     HAL=1
     SYSTEM=2
-    
+
     def __init__( self, name=None, paramTypes=[], help='', command_type=MOTION ):
         self.name = name
         self.paramTypes = paramTypes
@@ -737,7 +737,7 @@ class CommandItem( object ):
     # called in a "put_config" command to write INI data to INI file, completely re-writing the file
     def put_ini_data( self, commandDict ):
         global INI_FILENAME
-        global INI_FILE_PATH         
+        global INI_FILE_PATH
         reply = { 'code': LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND }
         try:
             # construct the section list
@@ -773,7 +773,7 @@ class CommandItem( object ):
                         if (len(line['values']['name']) > 0):
                             inifile.write( line['values']['name'] + '=' + line['values']['value'] + '\n' )
                 inifile.write('\n\n')
-            inifile.close()    
+            inifile.close()
             reply['code'] = LinuxCNCServerCommand.REPLY_COMMAND_OK
         except:
             reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
@@ -788,7 +788,7 @@ class CommandItem( object ):
     def put_client_config( self, key, value ):
         global CONFIG_FILENAME
         reply = {'code':LinuxCNCServerCommand.REPLY_COMMAND_OK}
-        
+
         try:
             fo = open( CONFIG_FILENAME, 'r' )
             jsonobj = json.loads( fo.read() );
@@ -797,8 +797,8 @@ class CommandItem( object ):
             jsonobj = {}
         finally:
             fo.close()
-        
-        try:    
+
+        try:
             fo = open( CONFIG_FILENAME, 'w' )
             fo.write( json.dumps(jsonobj) )
         except:
@@ -808,22 +808,22 @@ class CommandItem( object ):
                 fo.close()
             except:
                 reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
-                
+
         return reply
-           
+
 
     def put_gcode_file( self, filename, data ):
         global linuxcnc_command
 
         reply = {'code':LinuxCNCServerCommand.REPLY_COMMAND_OK}
         try:
-            
+
             # strip off just the filename, if a path was given
             # we will only look in the config directory, so we ignore path
             [h,f] = os.path.split( filename )
 
             path = StatusItem.get_ini_data( only_section='DISPLAY', only_name='PROGRAM_PREFIX' )['data']['parameters'][0]['values']['value']
-            
+
             try:
                 fo = open( os.path.join( path, f ), 'w' )
                 fo.write(data)
@@ -837,11 +837,11 @@ class CommandItem( object ):
 
             if (reply['code'] == LinuxCNCServerCommand.REPLY_COMMAND_OK):
                 (linuxcnc_command.program_open( os.path.join( path, f ) ) )
-            
+
         except Exception as ex:
             print ex
             reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
-        return reply         
+        return reply
 
     # writes the specified HAL file to disk
     def put_hal_file( self, filename, data ):
@@ -866,12 +866,12 @@ class CommandItem( object ):
                     fo.close()
                 except:
                     reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
-            
-        except Exception as ex: 
+
+        except Exception as ex:
             reply['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
-        
-        return reply 
-    
+
+        return reply
+
 
     def shutdown_linuxcnc( self ):
         try:
@@ -880,7 +880,7 @@ class CommandItem( object ):
             return {'code':LinuxCNCServerCommand.REPLY_COMMAND_OK }
         except:
             return {'code':LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND }
-        
+
     def start_linuxcnc( self ):
         global INI_FILENAME
         global INI_FILE_PATH
@@ -911,8 +911,8 @@ class CommandItem( object ):
             params = []
 
             if ((linuxcnc_command is None or (not linuxcnc_status_poller.linuxcnc_is_alive)) and not (self.type == CommandItem.SYSTEM)):
-                return { 'code':LinuxCNCServerCommand.REPLY_LINUXCNC_NOT_RUNNING } 
-            
+                return { 'code':LinuxCNCServerCommand.REPLY_LINUXCNC_NOT_RUNNING }
+
             for paramDesc in self.paramTypes:
                 paramval = passed_command_dict.get( paramDesc['pname'], None )
                 if paramval is None:
@@ -951,12 +951,12 @@ class CommandItem( object ):
             elif (self.type == CommandItem.SYSTEM):
                 # command is a special system command
                 reply = {}
-                
+
                 if (self.name == 'ini_file_name'):
                     INI_FILENAME = passed_command_dict.get( 'ini_file_name', INI_FILENAME )
                     [INI_FILE_PATH, x] = os.path.split( INI_FILENAME )
                     reply['code'] = LinuxCNCServerCommand.REPLY_COMMAND_OK
-                elif (self.name == 'config'): 
+                elif (self.name == 'config'):
                     reply = self.put_ini_data(passed_command_dict)
                 elif (self.name == 'clear_error'):
                     lastLCNCerror = ""
@@ -1176,7 +1176,7 @@ ConfigHelp = {
         'POSITION_FILE':    { 'default':'position.txt', 'help':'If set to a non-empty value, the joint positions are stored between runs in this file. This allows the machine to start with the same coordinates it had on shutdown. This assumes there was no movement of the machine while powered off. If unset, joint positions are not stored and will begin at 0 each time LinuxCNC is started. This can help on smaller machines without home switches. '},
         'NO_FORCE_HOMING':  { 'default':'1',          'help':'The default behavior is for LinuxCNC to force the user to home the machine before any MDI command or a program is run. Normally, only jogging is allowed before homing. Setting NO_FORCE_HOMING = 1 allows the user to make MDI moves and run programs without homing the machine first. Interfaces without homing ability will need to have this option set to 1. '}
         },
-    'EMCIO':{        
+    'EMCIO':{
         '':                 { 'default':'',          'help':'Tool changeer related information.'},
         'EMCIO':            { 'default':'io',        'help':'Name of IO controller program, e.g., io'},
         'CYCLE_TIME':       { 'default':'0.100',     'help':'The period, in seconds, at which EMCIO will run. Making it 0.0 or a negative number will tell EMCIO not to sleep at all. There is usually no need to change this number. '},
@@ -1197,7 +1197,7 @@ ConfigHelp['AXIS_6'] = ConfigHelp['AXIS_0'];
 ConfigHelp['AXIS_7'] = ConfigHelp['AXIS_0'];
 ConfigHelp['AXIS_8'] = ConfigHelp['AXIS_0'];
 ConfigHelp['AXIS_9'] = ConfigHelp['AXIS_0'];
-    
+
 
 # *****************************************************
 # HAL Interface
@@ -1235,7 +1235,7 @@ class HALInterface( object ):
             self.h = None
             print "WARNING: NO HAL PIN INTERFACE.  HAL Pin creation failed."
             logging.warn("WARNING: NO HAL PIN INTERFACE.  HAL Pin creation failed.")
-        
+
     def Tick( self ):
         if ( self.h is not None ):
             self.keepalive_counter = self.keepalive_counter + 1
@@ -1252,7 +1252,7 @@ class HALInterface( object ):
             self.time_elapsed = now_time - previous_time
             self.h['time_since_keepalive'] = self.time_elapsed
 
-HAL_INTERFACE = HALInterface()        
+HAL_INTERFACE = HALInterface()
 
 # Config File Editor
 INIFileDataTemplate = {
@@ -1285,9 +1285,9 @@ class LinuxCNCServerCommand( object ):
         self.CommandItems = commandItems
         self.server_command_handler = server_command_handler
         self.async_reply_buf = []
-        self.async_reply_buf_lock = threading.Lock() 
-        
-        if (command_dict is None):        
+        self.async_reply_buf_lock = threading.Lock()
+
+        if (command_dict is None):
             try:
                 self.commandDict = json.loads( command_message )
                 self.command = self.commandDict['command'].strip()
@@ -1308,7 +1308,7 @@ class LinuxCNCServerCommand( object ):
         val = json.dumps( self.replyval, cls=StatusItemEncoder )
         return val
 
-    # update on a watched variable 
+    # update on a watched variable
     def on_new_poll( self ):
         try:
             if (not self.statusitem.watchable):
@@ -1328,15 +1328,15 @@ class LinuxCNCServerCommand( object ):
 
     def monitor_async(self):
         if (len(self.async_reply_buf) > 0):
-            
+
             self.async_reply_buf_lock.acquire()
 
-            self.replyval = self.async_reply_buf[0]         
+            self.replyval = self.async_reply_buf[0]
             self.server_command_handler.send_message( self.form_reply() )
             self.async_reply_buf_lock.release()
 
             self.linuxcnc_status_poller.del_observer( self.monitor_async )
-        
+
         return
 
     # this is the main interface to a LinuxCNCServerCommand.  This determines what the command is, and executes it.
@@ -1361,7 +1361,7 @@ class LinuxCNCServerCommand( object ):
 
                     if (self.statusitem.isasync):
                         self.linuxcnc_status_poller.add_observer( self.monitor_async )
-                        
+
                     self.replyval = self.statusitem.get_cur_status_value(self.linuxcnc_status_poller, self.item_index, self.commandDict, async_buffer=self.async_reply_buf, async_lock=self.async_reply_buf_lock )
             except:
                 self.replyval['code'] = LinuxCNCServerCommand.REPLY_NAK
@@ -1383,7 +1383,7 @@ class LinuxCNCServerCommand( object ):
                         self.linuxcnc_status_poller.add_observer( self.on_new_poll )
             except:
                 self.replyval['code'] = LinuxCNCServerCommand.REPLY_NAK
-            
+
 
         elif (self.command == 'list_get'):
             try:
@@ -1408,8 +1408,8 @@ class LinuxCNCServerCommand( object ):
                 self.replyval = self.commanditem.execute( self.commandDict, self.linuxcnc_status_poller )
             except:
                 logging.debug( 'PUT Command: ERROR'  )
-                
- 
+
+
         elif (self.command == 'keepalive'):
             global HAL_INTERFACE
             try:
@@ -1419,7 +1419,7 @@ class LinuxCNCServerCommand( object ):
                 self.replyval['elapsed_time'] = HAL_INTERFACE.time_elapsed
             except:
                 self.replyval['code'] = LinuxCNCServerCommand.REPLY_ERROR_EXECUTING_COMMAND
-            
+
         # convert to JSON, and return the reply string
         return self.form_reply()
 
@@ -1436,16 +1436,16 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
         super( LinuxCNCCommandWebSocketHandler, self ).__init__( *args, **kwargs )
         self.user_validated = False
         print "New websocket Connection..."
-    
+
     def open(self,arg):
         global LINUXCNCSTATUS
         self.isclosed = False
         self.stream.socket.setsockopt( socket.IPPROTO_TCP, socket.TCP_NODELAY, 1 )
 
     def allow_draft76(self):
-        return False    
+        return False
 
-    def on_message(self, message): 
+    def on_message(self, message):
         global LINUXCNCSTATUS
         if int(options.verbose) > 2:
             if (message.find("\"HB\"") < 0):
@@ -1460,7 +1460,7 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
             except Exception as ex:
                 print "1:", ex
         else:
-            try: 
+            try:
                 global userdict
                 commandDict = json.loads( message )
                 id = commandDict.get('id','Login').strip()
@@ -1480,8 +1480,8 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
                     print "Logged FAILED (user unknown)"
                 self.write_message(json.dumps( { 'id':id, 'code':'?User not logged in', 'data':'?User not logged in'}, cls=StatusItemEncoder ))
 
-            
- 
+
+
     def send_message( self, message_to_send ):
         self.write_message( message_to_send )
         if int(options.verbose) > 4:
@@ -1496,7 +1496,7 @@ class LinuxCNCCommandWebSocketHandler(tornado.websocket.WebSocketHandler):
         if ('linuxcnc' in subprotocols ):
             return 'linuxcnc'
         elif (subprotocols == ['']): # some websocket clients don't support subprotocols, so allow this if they just provide an empty string
-            return '' 
+            return ''
         else:
             logging.warning('WEBSOCKET CLOSED: sub protocol linuxcnc not supported')
             logging.warning( 'Subprotocols: ' + subprotocols.__str__() )
@@ -1551,7 +1551,7 @@ def require_basic_auth(handler_class):
 
             # check if the user/pw combo is in our dictionary
             return check_user( user, pw )
-        
+
         def _execute(self, transforms, *args, **kwargs):
             if not require_basic_auth(self, kwargs):
                 return False
@@ -1572,7 +1572,7 @@ class PollHandler(tornado.web.RequestHandler):
         jsonp = self.get_argument("callback", None)
         if (jsonp is None):
             jsonp = self.get_argument("jsonp", None)
-        
+
         args = arg.split("/")
         args = [tornado.escape.url_unescape(x) for x in args]
         command_dict = {'command':args[0]}
@@ -1601,17 +1601,17 @@ class PollHandler(tornado.web.RequestHandler):
         self.finish()
 
 
-# *****************************************************  
+# *****************************************************
 @require_basic_auth
 class PollHandlerJSON(tornado.web.RequestHandler):
     def get(self, arg):
-        
+
         arg = tornado.escape.url_unescape(arg)
         jsonp = self.get_argument("callback", None)
         if (jsonp is None):
             jsonp = self.get_argument("jsonp", None)
 
-        self.set_header("Access-Control-Allow-Origin","*")            
+        self.set_header("Access-Control-Allow-Origin","*")
         if (jsonp is not None):
             self.set_header("Content-Type", "application/javascript")
             self.write( jsonp + '(' + LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_message=arg ).execute() + ')' )
@@ -1619,7 +1619,7 @@ class PollHandlerJSON(tornado.web.RequestHandler):
             self.set_header("Content-Type", "application/json")
             self.write(LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_message=arg ).execute())
         self.finish()
-  
+
 # *****************************************************
 class PollHeaderLogin(tornado.web.RequestHandler):
     def get(self, arg):
@@ -1659,14 +1659,14 @@ class PollHeaderLogin(tornado.web.RequestHandler):
         if (jsonp is None):
             jsonp = self.get_argument("jsonp", None)
 
-        self.set_header("Access-Control-Allow-Origin","*")    
+        self.set_header("Access-Control-Allow-Origin","*")
         if (jsonp is not None):
             self.set_header("Content-Type", "application/javascript")
             self.write( jsonp + '(' + LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_dict=command_dict ).execute() + ')' )
         else:
             self.set_header("Content-Type", "application/json")
             self.write(LinuxCNCServerCommand( StatusItems, CommandItems, self, LINUXCNCSTATUS, command_dict=command_dict ).execute())
-            
+
         self.finish()
 
 def readUserList():
@@ -1676,7 +1676,7 @@ def readUserList():
     logging.info("Reading user list...")
     userdict = {}
     try:
-        parser = SafeConfigParser() 
+        parser = SafeConfigParser()
         parser.read(os.path.join(application_path,'users.ini'))
         for name, value in parser.items('users'):
             userdict[name] = value
@@ -1690,7 +1690,7 @@ class MainHandler(tornado.web.RequestHandler):
         if (arg.upper() in [ '', 'INDEX.HTML', 'INDEX.HTM', 'INDEX']):
             self.render( 'LinuxCNCConfig.html' )
         else:
-            self.render( arg ) 
+            self.render( arg )
 
 # ********************************
 # ********************************
@@ -1711,7 +1711,7 @@ elif __file__:
 # the /pollhl/ use HTTP header arguments to log in
 application = tornado.web.Application([
     (r"/([^\\/]*)", MainHandler, {} ),
-    (r"/command/(.*)", PollHandler, {} ),  
+    (r"/command/(.*)", PollHandler, {} ),
     (r"/polljson/(.*)", PollHandlerJSON, {} ),
     (r"/query/(.*)", PollHeaderLogin, {} ),
     (r"/websocket/(.*)", LinuxCNCCommandWebSocketHandler, {} ),
@@ -1725,7 +1725,7 @@ application = tornado.web.Application([
 # ********************************
 # main()
 # ********************************
-# ******************************** 
+# ********************************
 def main():
     global INI_FILENAME
     global INI_FILE_PATH
@@ -1765,7 +1765,7 @@ def main():
 
 
     logging.basicConfig(filename=os.path.join(application_path,'linuxcnc_webserver.log'),format='%(asctime)sZ pid:%(process)s module:%(module)s %(message)s', level=logging.ERROR)
- 
+
     #rpdb2.start_embedded_debugger("password")
 
     readUserList()
@@ -1789,7 +1789,7 @@ def main():
     tornado.autoreload.start()
 
     # start up the webserver loop
-    main_loop.start() 
+    main_loop.start()
 
 # auto start if executed from the command line
 if __name__ == "__main__":
@@ -1798,5 +1798,5 @@ if __name__ == "__main__":
         main()
     except Exception as ex:
         print ex
-            
+
 
