@@ -23,8 +23,8 @@ import warnings
 # *****************************************************
 class HALAnalyzer( object ):
     def __init__(self ):
-        self.Graph = pygraphviz.AGraph( directed=True, name='HAL Diagram', rankdir='LR', splines='spline', aspect='1', overlap='false', start='regular', forcelabels='true' )
                 
+        self.Graph = pygraphviz.AGraph( directed=True, name='HAL Diagram', rankdir='LR', splines='spline', overlap='false', start='regular', forcelabels='true' )
     def parse_comps( self ):
         p = subprocess.Popen( ['halcmd', '-s', 'show', 'comp'] , stderr=subprocess.PIPE, stdout=subprocess.PIPE, bufsize=(1024*64) )
         raw = p.communicate()[0].split( '\n' )
